@@ -6,10 +6,11 @@ TEST(siesta, server_create)
     auto server = siesta::createServer("127.0.0.1", 8080);
 
     siesta::RouteHolder routeHolder;
-    routeHolder << server->addRoute(siesta::Method::POST,
-                                    "/my/freakin/path",
-                                    [](const siesta::Request& req) {
-                                        //
-                                        return req.body_;
-                                    });
+    routeHolder += server->addRoute(
+        siesta::Method::POST,
+        "/my/test/path",
+        [](const siesta::Request& req, siesta::Response& resp) {
+            //
+            resp.setBody(req.getBody());
+        });
 }

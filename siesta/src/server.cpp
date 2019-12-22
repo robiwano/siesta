@@ -286,6 +286,7 @@ namespace
                     if (resp.status_ != NNG_HTTP_STATUS_OK) {
                         nng_http_res_set_status(response, resp.status_);
                     }
+                    break;
                 }
             }
             throw RouteNotFound();

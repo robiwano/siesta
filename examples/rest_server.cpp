@@ -13,10 +13,12 @@ int main(int argc, char** argv)
     bool stop_server = false;
 
     siesta::RouteHolder h;
-    h += server->addRoute(siesta::Method::GET,
-                          "/barf",
-                          [](const siesta::Request&,
-                             siesta::Response&) -> std::string { throw 42; });
+    h += server->addRoute(
+        siesta::Method::GET,
+        "/barf",
+        [](const siesta::Request&, siesta::Response&) {
+            throw std::runtime_error("This will end up as error message");
+        });
 
     h += server->addRoute(siesta::Method::POST,
                           "/shutdown",
