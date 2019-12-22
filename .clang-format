@@ -1,0 +1,26 @@
+---
+BasedOnStyle: Google
+---
+Language: Cpp
+
+AccessModifierOffset : -4
+AlignAfterOpenBracket : true
+AlignConsecutiveAssignments : true
+AlignOperands : true
+AlignTrailingComments: true
+AllowAllParametersOfDeclarationOnNextLine : false
+AllowShortFunctionsOnASingleLine : All
+AllowShortIfStatementsOnASingleLine : false
+AllowShortLoopsOnASingleLine : false
+BinPackArguments : false
+BinPackParameters : false
+BreakBeforeBraces : Linux
+BreakConstructorInitializersBeforeComma : true
+ConstructorInitializerAllOnOneLineOrOnePerLine : true
+DerivePointerAlignment: false
+IndentCaseLabels: false
+IndentWidth : 4
+NamespaceIndentation : All
+Standard : C++11
+TabWidth: 4
+---
