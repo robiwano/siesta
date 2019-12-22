@@ -38,7 +38,19 @@ namespace siesta
         virtual std::string getBody() const                          = 0;
     };
 
-    using RouteHandler = std::function<std::string(const Request&)>;
+    class Response
+    {
+    public:
+        virtual ~Response()                              = default;
+        virtual void setHttpStatus(int status)           = 0;
+        virtual void addHeader(const std::string& key,
+                               const std::string& value) = 0;
+        // Set the body of the response
+        virtual void setBody(const void* data, size_t size) = 0;
+        virtual void setBody(const std::string& data)       = 0;
+    };
+
+    using RouteHandler = std::function<void(const Request&, Response&)>;
 
     class Server
     {

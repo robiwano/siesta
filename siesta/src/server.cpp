@@ -57,6 +57,34 @@ namespace
         std::string body_;
     };
 
+    class ResponseImpl : public Response
+    {
+        nng_http_res* res_;
+
+    public:
+        ResponseImpl(nng_http_res* res) : res_(res) {}
+        void setHttpStatus(int status) override { status_ = status; }
+
+        void addHeader(const std::string& key,
+                       const std::string& value) override
+        {
+            int rv = nng_http_res_add_header(res_, key.c_str(), value.c_str());
+            if (rv != 0) {
+                throw std::runtime_error("Failed to set response header");
+            }
+        }
+
+        void setBody(const void* data, size_t size) override
+        {
+            body_.assign((const char*)data, size);
+        }
+
+        void setBody(const std::string& data) override { body_ = data; }
+
+        std::string body_;
+        int status_{200};
+    };
+
     struct RouteNotFound {
     };
 
@@ -193,22 +221,16 @@ namespace
             nng_http_conn* conn = (nng_http_conn*)nng_aio_get_input(aio, 2);
             ServerImpl* pThis   = (ServerImpl*)nng_http_handler_get_data(h);
             nng_http_res* res;
-            size_t sz;
             int rv;
-            void* data;
 
             if ((rv = nng_http_res_alloc(&res)) != 0) {
                 nng_aio_finish(aio, rv);
                 return;
             }
-
-            nng_http_req_get_data(req, &data, &sz);
             nng_http_res_set_data(res, NULL, 0);
 
             try {
-                auto response = pThis->handle_rest_request(req, data, sz);
-                rv            = nng_http_res_copy_data(
-                    res, response.data(), response.length());
+                pThis->handle_rest_request(req, res);
             } catch (RouteNotFound&) {
                 nng_http_res_set_status(res, NNG_HTTP_STATUS_NOT_FOUND);
                 nng_http_res_set_reason(res, NULL);
@@ -225,14 +247,15 @@ namespace
             nng_aio_finish(aio, 0);
         }
 
-        std::string handle_rest_request(nng_http_req* request,
-                                        const void* data,
-                                        size_t sz)
+        void handle_rest_request(nng_http_req* request, nng_http_res* response)
         {
             std::string retval;
             const char* method = nng_http_req_get_method(request);
             auto route_it      = routes_.find(method);
             if (route_it != routes_.end()) {
+                void* data = NULL;
+                size_t sz  = 0ULL;
+                nng_http_req_get_data(request, &data, &sz);
                 const char* uri   = nng_http_req_get_uri(request);
                 auto& handler_map = route_it->second;
                 for (const auto& entry : handler_map.second) {
@@ -250,8 +273,19 @@ namespace
                     if (data != nullptr) {
                         req.body_.assign((const char*)data, sz);
                     }
-                    retval = (entry.second.second)(req);
-                    return retval;
+                    ResponseImpl resp(response);
+                    (entry.second.second)(req, resp);
+                    if (!resp.body_.empty()) {
+                        int rv = nng_http_res_copy_data(
+                            response, resp.body_.data(), resp.body_.length());
+                        if (rv != 0) {
+                            throw std::runtime_error(
+                                "Failed to copy data to response");
+                        }
+                    }
+                    if (resp.status_ != NNG_HTTP_STATUS_OK) {
+                        nng_http_res_set_status(response, resp.status_);
+                    }
                 }
             }
             throw RouteNotFound();
