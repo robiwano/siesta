@@ -18,7 +18,7 @@ namespace siesta
         std::vector<std::unique_ptr<Route>> routes_;
 
     public:
-        RouteHolder& operator<<(std::unique_ptr<Route> route);
+        RouteHolder& operator+=(std::unique_ptr<Route> route);
     };
 
     enum class Method {
@@ -32,10 +32,10 @@ namespace siesta
     class Request
     {
     public:
-        virtual ~Request()                                            = default;
-        virtual const std::vector<std::string>& getParameters() const = 0;
-        virtual std::string getHeader(const std::string& key) const   = 0;
-        virtual std::string getBody() const                           = 0;
+        virtual ~Request()                                           = default;
+        virtual const std::vector<std::string>& getUriGroups() const = 0;
+        virtual std::string getHeader(const std::string& key) const  = 0;
+        virtual std::string getBody() const                          = 0;
     };
 
     using RouteHandler = std::function<std::string(const Request&)>;

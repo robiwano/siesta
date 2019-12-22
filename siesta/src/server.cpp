@@ -36,9 +36,9 @@ namespace
 
     public:
         RequestImpl(nng_http_req* req) : req_(req) {}
-        const std::vector<std::string>& getParameters() const override
+        const std::vector<std::string>& getUriGroups() const override
         {
-            return parameters_;
+            return uri_groups_;
         }
 
         std::string getHeader(const std::string& key) const override
@@ -53,8 +53,11 @@ namespace
 
         std::string getBody() const override { return body_; }
 
-        std::vector<std::string> parameters_;
+        std::vector<std::string> uri_groups_;
         std::string body_;
+    };
+
+    struct RouteNotFound {
     };
 
     struct RouteImpl : public Route {
@@ -171,7 +174,7 @@ namespace
             handler_map.second.insert(
                 std::make_pair(id, std::make_pair(std::move(r), handler)));
             return std::unique_ptr<Route>(new RouteImpl(
-                [id, m_str, pThis] { pThis->removeRoute(m_str, id); }));
+                [pThis, m_str, id] { pThis->removeRoute(m_str, id); }));
         }
 
         void start() override
@@ -200,14 +203,24 @@ namespace
             }
 
             nng_http_req_get_data(req, &data, &sz);
+            nng_http_res_set_data(res, NULL, 0);
 
             try {
                 auto response = pThis->handle_rest_request(req, data, sz);
                 rv            = nng_http_res_copy_data(
                     res, response.data(), response.length());
-            } catch (std::exception&) {
+            } catch (RouteNotFound&) {
+                nng_http_res_set_status(res, NNG_HTTP_STATUS_NOT_FOUND);
+                nng_http_res_set_reason(res, NULL);
+            } catch (std::exception& e) {
+                nng_http_res_set_status(res,
+                                        NNG_HTTP_STATUS_INTERNAL_SERVER_ERROR);
+                nng_http_res_set_reason(res, e.what());
+            } catch (...) {
+                nng_http_res_set_status(res,
+                                        NNG_HTTP_STATUS_INTERNAL_SERVER_ERROR);
+                nng_http_res_set_reason(res, "Unknown error");
             }
-
             nng_aio_set_output(aio, 0, res);
             nng_aio_finish(aio, 0);
         }
@@ -219,36 +232,34 @@ namespace
             std::string retval;
             const char* method = nng_http_req_get_method(request);
             auto route_it      = routes_.find(method);
-            if (route_it == routes_.end()) {
-                throw std::runtime_error("No handler found for " +
-                                         std::string(method));
-            }
-            const char* uri   = nng_http_req_get_uri(request);
-            auto& handler_map = route_it->second;
-            for (const auto& entry : handler_map.second) {
-                std::cmatch m;
-                if (!std::regex_match(uri, m, entry.second.first)) {
-                    continue;
-                }
-                RequestImpl req(request);
-                if (m.size() > 1) {
-                    for (size_t i = 1; i < m.size(); ++i) {
-                        req.parameters_.emplace_back(m[i].first,
-                                                     m[i].second - m[i].first);
+            if (route_it != routes_.end()) {
+                const char* uri   = nng_http_req_get_uri(request);
+                auto& handler_map = route_it->second;
+                for (const auto& entry : handler_map.second) {
+                    std::cmatch m;
+                    if (!std::regex_match(uri, m, entry.second.first)) {
+                        continue;
                     }
+                    RequestImpl req(request);
+                    if (m.size() > 1) {
+                        for (size_t i = 1; i < m.size(); ++i) {
+                            req.uri_groups_.emplace_back(
+                                m[i].first, m[i].second - m[i].first);
+                        }
+                    }
+                    if (data != nullptr) {
+                        req.body_.assign((const char*)data, sz);
+                    }
+                    retval = (entry.second.second)(req);
+                    return retval;
                 }
-                if (data != nullptr) {
-                    req.body_.assign((const char*)data, sz);
-                }
-                retval = (entry.second.second)(req);
-                return retval;
             }
-            throw std::runtime_error("handler not found");
+            throw RouteNotFound();
         }
     };
 }  // namespace
 
-siesta::RouteHolder& siesta::RouteHolder::operator<<(
+siesta::RouteHolder& siesta::RouteHolder::operator+=(
     std::unique_ptr<Route> route)
 {
     routes_.push_back(std::move(route));
