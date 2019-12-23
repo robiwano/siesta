@@ -200,7 +200,7 @@ namespace
                           ? 1
                           : handler_map.second.rbegin()->first + 1;
             auto pThis = shared_from_this();
-            std::regex r(uri_regexp + ".*");
+            std::regex r(uri_regexp);
             handler_map.second.insert(
                 std::make_pair(id, std::make_pair(std::move(r), handler)));
             return std::unique_ptr<Route>(new RouteImpl(
@@ -263,14 +263,14 @@ namespace
                 if (q_pos != std::string::npos) {
                     const std::regex r("([^=&]+)=([^=&]+)");
                     std::smatch m;
-                    std::string queries = uri.substr(q_pos + 1);
-                    std::string::const_iterator searchStart(queries.cbegin());
-                    while (
-                        std::regex_search(searchStart, queries.cend(), m, r)) {
+                    std::string::const_iterator searchStart(uri.cbegin() +
+                                                            q_pos + 1);
+                    while (std::regex_search(searchStart, uri.cend(), m, r)) {
                         req.queries_.insert(
                             std::make_pair(m[1].str(), m[2].str()));
                         searchStart = m.suffix().first;
                     }
+                    uri = uri.substr(0, q_pos);
                 }
                 auto& handler_map = route_it->second;
                 for (const auto& entry : handler_map.second) {
@@ -280,8 +280,7 @@ namespace
                     }
                     if (m.size() > 1) {
                         for (size_t i = 1; i < m.size(); ++i) {
-                            req.uri_groups_.emplace_back(m[i].first,
-                                                         m[i].second);
+                            req.uri_groups_.push_back(m[i].str());
                         }
                     }
                     if (data != nullptr) {
