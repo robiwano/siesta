@@ -5,7 +5,6 @@
 #include <nng/supplemental/util/platform.h>
 #include <siesta/server.h>
 
-#include <map>
 #include <mutex>
 #include <regex>
 #include <stdexcept>
@@ -41,6 +40,11 @@ namespace
             return uri_groups_;
         }
 
+        const std::map<std::string, std::string>& getQueries() const override
+        {
+            return queries_;
+        }
+
         std::string getHeader(const std::string& key) const override
         {
             std::string retval;
@@ -54,6 +58,7 @@ namespace
         std::string getBody() const override { return body_; }
 
         std::vector<std::string> uri_groups_;
+        std::map<std::string, std::string> queries_;
         std::string body_;
     };
 
@@ -83,9 +88,6 @@ namespace
 
         std::string body_;
         int status_{200};
-    };
-
-    struct RouteNotFound {
     };
 
     struct RouteImpl : public Route {
@@ -218,7 +220,6 @@ namespace
         {
             nng_http_req* req   = (nng_http_req*)nng_aio_get_input(aio, 0);
             nng_http_handler* h = (nng_http_handler*)nng_aio_get_input(aio, 1);
-            nng_http_conn* conn = (nng_http_conn*)nng_aio_get_input(aio, 2);
             ServerImpl* pThis   = (ServerImpl*)nng_http_handler_get_data(h);
             nng_http_res* res;
             int rv;
@@ -230,10 +231,10 @@ namespace
             nng_http_res_set_data(res, NULL, 0);
 
             try {
-                pThis->handle_rest_request(req, res);
-            } catch (RouteNotFound&) {
-                nng_http_res_set_status(res, NNG_HTTP_STATUS_NOT_FOUND);
-                nng_http_res_set_reason(res, NULL);
+                if (!pThis->handle_rest_request(req, res)) {
+                    nng_http_res_set_status(res, NNG_HTTP_STATUS_NOT_FOUND);
+                    nng_http_res_set_reason(res, NULL);
+                }
             } catch (std::exception& e) {
                 nng_http_res_set_status(res,
                                         NNG_HTTP_STATUS_INTERNAL_SERVER_ERROR);
@@ -247,27 +248,53 @@ namespace
             nng_aio_finish(aio, 0);
         }
 
-        void handle_rest_request(nng_http_req* request, nng_http_res* response)
+        bool handle_rest_request(nng_http_req* request, nng_http_res* response)
         {
             std::string retval;
             const char* method = nng_http_req_get_method(request);
             auto route_it      = routes_.find(method);
             if (route_it != routes_.end()) {
+                RequestImpl req(request);
                 void* data = NULL;
                 size_t sz  = 0ULL;
                 nng_http_req_get_data(request, &data, &sz);
-                const char* uri   = nng_http_req_get_uri(request);
+                std::string uri(nng_http_req_get_uri(request));
+                auto q_pos = uri.find('?');
+                if (q_pos != std::string::npos) {
+                    std::string queries = uri.substr(q_pos + 1);
+                    uri                 = uri.substr(0, q_pos);
+                    q_pos               = 0;
+                    while (true) {
+                        auto amp_pos = queries.find_first_of('&', q_pos);
+                        size_t len   = amp_pos == std::string::npos
+                                         ? amp_pos
+                                         : amp_pos - q_pos;
+                        std::string query = queries.substr(q_pos, len);
+                        auto eq_pos       = query.find('=');
+                        if (eq_pos == std::string::npos) {
+                            nng_http_res_set_status(
+                                response, NNG_HTTP_STATUS_BAD_REQUEST);
+                            nng_http_res_set_reason(response,
+                                                    "malformed query");
+                            return true;
+                        }
+                        req.queries_.insert(std::make_pair(
+                            query.substr(0, eq_pos), query.substr(eq_pos + 1)));
+                        if (amp_pos == std::string::npos)
+                            break;
+                        q_pos = amp_pos + 1;
+                    }
+                }
                 auto& handler_map = route_it->second;
                 for (const auto& entry : handler_map.second) {
-                    std::cmatch m;
+                    std::smatch m;
                     if (!std::regex_match(uri, m, entry.second.first)) {
                         continue;
                     }
-                    RequestImpl req(request);
                     if (m.size() > 1) {
                         for (size_t i = 1; i < m.size(); ++i) {
-                            req.uri_groups_.emplace_back(
-                                m[i].first, m[i].second - m[i].first);
+                            req.uri_groups_.emplace_back(m[i].first,
+                                                         m[i].second);
                         }
                     }
                     if (data != nullptr) {
@@ -286,10 +313,10 @@ namespace
                     if (resp.status_ != NNG_HTTP_STATUS_OK) {
                         nng_http_res_set_status(response, resp.status_);
                     }
-                    return;
+                    return true;
                 }
             }
-            throw RouteNotFound();
+            return false;
         }
     };
 }  // namespace

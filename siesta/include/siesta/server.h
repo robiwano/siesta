@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -34,8 +35,10 @@ namespace siesta
     public:
         virtual ~Request()                                           = default;
         virtual const std::vector<std::string>& getUriGroups() const = 0;
-        virtual std::string getHeader(const std::string& key) const  = 0;
-        virtual std::string getBody() const                          = 0;
+        virtual const std::map<std::string, std::string>& getQueries()
+            const                                                   = 0;
+        virtual std::string getHeader(const std::string& key) const = 0;
+        virtual std::string getBody() const                         = 0;
     };
 
     class Response
@@ -55,11 +58,12 @@ namespace siesta
     class Server
     {
     public:
-        virtual ~Server()                                             = default;
-        virtual std::unique_ptr<Route> addRoute(Method method,
-                                                const std::string& uri_regexp,
-                                                RouteHandler handler) = 0;
-        virtual void start()                                          = 0;
+        virtual ~Server() = default;
+        virtual [[nodiscard]] std::unique_ptr<Route> addRoute(
+            Method method,
+            const std::string& uri_regexp,
+            RouteHandler handler) = 0;
+        virtual void start()      = 0;
     };
 
     std::shared_ptr<Server> createServer(const std::string& ip_address,
