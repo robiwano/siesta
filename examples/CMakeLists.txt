@@ -12,7 +12,7 @@ foreach(E ${EXAMPLE_SRC})
     endif()
 
     target_include_directories(${EXAMPLE_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-    target_link_libraries(${EXAMPLE_NAME} siesta_static)
+    target_link_libraries(${EXAMPLE_NAME} siesta)
     set_target_properties(${EXAMPLE_NAME}
         PROPERTIES
         FOLDER "Examples"

@@ -1,6 +1,9 @@
 #include <nng/nng.h>
 #include <nng/supplemental/http/http.h>
+#include <nng/supplemental/tls/tls.h>
 #include <siesta/client.h>
+
+#include <string.h>
 
 using namespace siesta;
 using namespace siesta::client;
@@ -43,6 +46,7 @@ namespace
                 nng_aio* aio;
                 nng_http_req* req;
                 nng_http_res* res;
+                nng_tls_config* tls = NULL;
                 int rv;
                 static const char* method_str[] = {
                     "POST",
@@ -62,6 +66,28 @@ namespace
                 }
                 Deleter<nng_http_client> free_client(client,
                                                      nng_http_client_free);
+
+                if (strcmp(url->u_scheme, "https") == 0) {
+                    if ((rv = nng_tls_config_alloc(&tls,
+                                                   NNG_TLS_MODE_CLIENT)) != 0) {
+                        fatal("nng_tls_config_alloc", rv);
+                    }
+
+                    if ((rv = nng_tls_config_server_name(
+                             tls, url->u_hostname)) != 0) {
+                        fatal("nng_tls_config_server_name", rv);
+                    }
+
+                    if ((rv = nng_tls_config_auth_mode(
+                             tls, NNG_TLS_AUTH_MODE_NONE)) != 0) {
+                        fatal("nng_tls_config_alloc", rv);
+                    }
+
+                    if ((rv = nng_http_client_set_tls(client, tls)) != 0) {
+                        fatal("nng_http_client_set_tls", rv);
+                    }
+                }
+                Deleter<nng_tls_config> free_tls(tls, nng_tls_config_free);
 
                 if ((rv = nng_http_req_alloc(&req, url)) != 0) {
                     fatal("Failed to alloc http request", rv);

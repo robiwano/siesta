@@ -8,7 +8,7 @@ TEST(siesta, client_connect_ok)
     auto f = siesta::client::getRequest("http://postman-echo.com/get?foo1=bar1",
                                         5000);
 
-    std::unique_ptr<siesta::client::Response> resp;
+    decltype(f.get()) resp;
     EXPECT_NO_THROW(resp = f.get());
     EXPECT_EQ(resp->getStatus(), siesta::HttpStatus::OK);
     EXPECT_GT(resp->getBody().size(), 0);

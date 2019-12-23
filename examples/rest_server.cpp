@@ -11,8 +11,14 @@ using namespace siesta;
 int main(int argc, char** argv)
 {
     try {
-        auto server = server::createServer("127.0.0.1", 8088);
+        int port = 0;
+        if (argc > 1) {
+            port = atoi(argv[1]);
+        }
+        auto server = server::createServer("127.0.0.1", port);
         server->start();
+        std::cout << "Server started, listening on port " << server->port()
+                  << std::endl;
 
         bool stop_server = false;
 
@@ -107,11 +113,15 @@ int main(int argc, char** argv)
                 for (auto q : queries) {
                     retval << q.first << "=" << q.second << std::endl;
                 }
+                retval << "Body:" << std::endl;
+                retval << req.getBody() << std::endl;
                 resp.setBody(retval.str());
             });
 
         while (!stop_server)
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        std::cout << "Server stopped!" << std::endl;
     } catch (std::exception& e) {
         std::cerr << e.what() << std::endl;
     }

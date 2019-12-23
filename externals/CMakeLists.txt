@@ -14,11 +14,22 @@ set(NNG_PROTO_SURVEYOR0 OFF CACHE BOOL "" FORCE)
 set(NNG_TRANSPORT_INPROC OFF CACHE BOOL "" FORCE)
 set(NNG_TRANSPORT_IPC OFF CACHE BOOL "" FORCE)
 set(NNG_TRANSPORT_WS OFF CACHE BOOL "" FORCE)
+set(NNG_TRANSPORT_WSS OFF CACHE BOOL "" FORCE)
 add_subdirectory(nng)
+set_target_properties(
+    nng
+    PROPERTIES
+    FOLDER "Third-Party/nng"
+)
 if (SIESTA_NUM_TASKS)
     target_compile_definitions(nng PRIVATE NNG_NUM_TASKQ_THREADS=${SIESTA_NUM_TASKS})
 endif()
 
 if (SIESTA_BUILD_TESTS)
     add_subdirectory(googletest)
+    set_target_properties(
+        gtest gtest_main
+        PROPERTIES
+        FOLDER "Third-Party/googletest"
+    )
 endif()

@@ -2,18 +2,103 @@
 #include <nng/protocol/reqrep0/rep.h>
 #include <nng/protocol/reqrep0/req.h>
 #include <nng/supplemental/http/http.h>
+#include <nng/supplemental/tls/tls.h>
 #include <nng/supplemental/util/platform.h>
+#include <nng/transport/tls/tls.h>
 #include <siesta/server.h>
 
 #include <mutex>
 #include <regex>
 #include <stdexcept>
 
+#ifdef WIN32
+#include <winsock.h>
+#else
+#include <arpa/inet.h>
+#endif
+
 using namespace siesta;
 using namespace siesta::server;
 
 namespace
 {
+    // These keys are for demonstration purposes ONLY.  DO NOT USE.
+    // The certificate is valid for 100 years, because I don't want to
+    // have to regenerate it ever again. The CN is 127.0.0.1, and self-signed.
+    //
+    // Generated using openssl:
+    //
+    // % openssl req -newkey rsa:2048 -nodes -keyout key.pem
+    //           -x509 -days 36500 -out certificate.pem
+    //
+    // Relevant metadata:
+    //
+    // Certificate:
+    //     Data:
+    //         Version: 3 (0x2)
+    //         Serial Number:
+    //             e3:38:92:c1:35:4b:bd:ee
+    //     Signature Algorithm: sha256WithRSAEncryption
+    //         Issuer: CN = 127.0.0.1
+    //         Validity
+    //             Not Before: Dec 26 07:26:58 2019 GMT
+    //             Not After : Dec  2 07:26:58 2119 GMT
+    //         Subject: CN = 127.0.0.1
+    //         Subject Public Key Info:
+    //             Public Key Algorithm: rsaEncryption
+    //                 Public-Key: (2048 bit)
+    //
+    static const char tls_cert[] = R"(
+-----BEGIN CERTIFICATE-----
+MIIDADCCAeigAwIBAgIJAOM4ksE1S73uMA0GCSqGSIb3DQEBCwUAMBQxEjAQBgNV
+BAMMCTEyNy4wLjAuMTAgFw0xOTEyMjYwNzI2NThaGA8yMTE5MTIwMjA3MjY1OFow
+FDESMBAGA1UEAwwJMTI3LjAuMC4xMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIB
+CgKCAQEArComOWRVREMFgzSHvQvKnSBtDsxwkCV0toYEc0Fe0LwDTXZlXatL5hx2
+cVerTVI++ljtlnoEomFGnAtkSbaZR8ofxEqYC53ePaa2FIdt/ymJkV0Nc752PLVO
+6i9UnQ6oTmYTkmVilfuIUJMxE/om+kVFBctVgxq/7zrXBgyC1LhV5aU6YNRjBGHz
+N8W49nZ/bjCu27o5qkYgUG5/LLcswh7yDKzmxM87rY2snes7qsNb6MdkmWfVjvrK
+ln+4MVCKI3XknVUHASMqt0XItBiq6j4KWRls0oE5I5rNA5fg5jvLYUOz2CgvdhDO
+jlX3wGJRi/EWd5TDv8j+8X0cx46MBQIDAQABo1MwUTAdBgNVHQ4EFgQUBHu6g2tY
+3kCSppkONcPN5YVYnwMwHwYDVR0jBBgwFoAUBHu6g2tY3kCSppkONcPN5YVYnwMw
+DwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEAU9fbCV2pM4cDhmPR
+9o37Qfhv9hen9dU+cytqomaNelytUBWciaKmPqsj5Zce3+Ole9gsCht6HGRmXf4C
+zKHUm0G6N1ijY2B9uwQK6ux/v4aAAOimB9ZyOCJp4t20RI6hsH/FNIy9fdvUBFPy
+2CYgTuPsp/P4duaAGDMgxSugNC90C86jV+Gqs7r++5NB7d7U3OsGbOrqZXgha/hf
+sewq2VW57eeZiAAyHEsrR0u0tHbEBg635PbNz9scqpdJUBpicxJDV0S0q8hZYNAE
+FVzPKT4CKKluYGCEz7rtYqL5NP0x3BHMmiLqjN+ApLvVJJBW+TijIMki+jxW0Lry
+pbwnpQ==
+-----END CERTIFICATE-----)";
+
+    static const char tls_key[] = R"(
+-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCsKiY5ZFVEQwWD
+NIe9C8qdIG0OzHCQJXS2hgRzQV7QvANNdmVdq0vmHHZxV6tNUj76WO2WegSiYUac
+C2RJtplHyh/ESpgLnd49prYUh23/KYmRXQ1zvnY8tU7qL1SdDqhOZhOSZWKV+4hQ
+kzET+ib6RUUFy1WDGr/vOtcGDILUuFXlpTpg1GMEYfM3xbj2dn9uMK7bujmqRiBQ
+bn8styzCHvIMrObEzzutjayd6zuqw1vox2SZZ9WO+sqWf7gxUIojdeSdVQcBIyq3
+Rci0GKrqPgpZGWzSgTkjms0Dl+DmO8thQ7PYKC92EM6OVffAYlGL8RZ3lMO/yP7x
+fRzHjowFAgMBAAECggEAGPV/VyCpj9zbhrrt1sVH2WGjDdsrkmorsm5ZZNAcS8yF
++gvpBBxaQ4Dq1uGrzujWgnqz7vW/iD7r+qFYJ6uWKyctVcquojh/yJZLnUxI8Q33
+iKBh297Hy2NJjn/QF3jRg5Qe0EFsemvdxjigi9HfJrc2G3Hv8rLFEoyIMbNMoEPg
+DkV5UW9FMe9RJ3NyLdfj77uYZxwoBw4+mZNsIcxNcONYizMBwLXvGTmnchUG88xa
+oSXsmqP9sds1KOuGf1abZ2jVqfa/zgTzGnFBDprvHWgibMDxEWv5cL7ob8SvcyKt
+RpbIQd03rIa04zT7FJ2K0zQb84Og28eC9Nwb1kS4vQKBgQDem+yrDYV2kZVdtsQR
+FdcMVv4LIf5AKxC/OkiAdIDdoJ837/hvrKNsKkx11YKcRhfrMhs505S4Zw/8NYcg
+79HX++r8dYfn4+rA8lTZ122HJRss6mVN5ISrBQuybZcYLPwcmyTZTl2Kx05ed404
+FjK0IxFf5pGeMksrzEHMN/sDZwKBgQDF/S8nYDnPIJPdBV5oqGNC7IfA8PuBj6Mp
+GcIlfKBGh8k/OvnLdyHRvqyR47DVQpOcG5CcCEfh6LU9cNKrK+jWXhJor7LGqVar
+JzK+virkK/oMbT0ck1711h9p8kICyz6KOt6fPiwkHDmTTs4vCZRt8LP6XnnF/xRl
+4BccAkOdswKBgQCU8snRzlNN+a1yrhbUw8NHe3Gya0VfFDG5cjsO0GVlZdMDL6sQ
+tfgHKOpOMdWZ0QCyG63B7INnO3ajsAFBlZXYKbSaxd1w2Ly766nAtPeRZM+hJxkv
+nEb004R3GALwZzEtxtVKHbhTYnZamS3BqIC2rXwzqegnbMmFfb9M8Owg4wKBgDqD
+pnEDvnIZ1bmHwaw6wANidoiucBaNhhI6m6eKmq/dp7u5SWQ51FPx/3yqh3Ov1oJX
+nziONfhtV0tOUeTm+EyKxvQLoVGXcJbq4dN/zpta5+7ORjZw06riWqxsPdgni1c9
+KNh1foQ5l0aTDtrWAPkxH3AKhgDfb37gaNQNU0CDAoGAcx+KByf9XVIYa5pB3uIK
+z0lEkiWQ1XKmlpLODNdLZrNhbzmxfV8JwpzstpsIxGg0vGfqfiicpdZKMEL5C2VF
+lAk2Ntrke1HbpUXT4Y5rDmMpW/DYzh+wuaJutHqWWz79QVyHKETLnCJZ1rMoQ2Sv
+zFX5yAtcD5BnoPBo0CE5y/I=
+-----END PRIVATE KEY-----)";
+
     static const char* method_str[] = {
         "POST",
         "PUT",
@@ -30,6 +115,9 @@ namespace
         snprintf(buffer, sizeof(buffer), "%s: %s", what, nng_strerror(rv));
         throw std::runtime_error(buffer);
     }
+
+    template <typename Type>
+    using Deleter = std::unique_ptr<Type, void (*)(Type*)>;
 
     template <class _Mutex>
     class unlockable_lock_guard
@@ -65,6 +153,7 @@ namespace
     class RequestImpl : public Request
     {
         nng_http_req* req_;
+        const std::string my_uri_;
 
     public:
         RequestImpl(nng_http_req* req)
@@ -109,7 +198,6 @@ namespace
 
         std::string getBody() const override { return body_; }
 
-        const std::string my_uri_;
         std::map<std::string, std::string> uri_parameters_;
         std::map<std::string, std::string> queries_;
         std::string body_;
@@ -150,11 +238,11 @@ namespace
         std::string reason_;
     };
 
-    struct RouteImpl : public Route {
+    struct RouteTokenImpl : public RouteToken {
         using fn_type = std::function<void(void)>;
         fn_type fn_;
-        RouteImpl(fn_type fn) : fn_(fn) {}
-        ~RouteImpl() { fn_(); }
+        RouteTokenImpl(fn_type fn) : fn_(fn) {}
+        ~RouteTokenImpl() { fn_(); }
     };
 
     class ServerImpl : public Server,
@@ -162,6 +250,7 @@ namespace
     {
         std::mutex handler_mutex_;
         nng_http_server* server_;
+        nng_tls_config* tls_cfg_;
 
         struct route {
             std::regex reg_exp;
@@ -174,8 +263,12 @@ namespace
             routes_;
 
     public:
-        ServerImpl(const std::string& ip_address, const int port)
-            : server_(nullptr)
+        ServerImpl(const std::string& ip_address,
+                   const int port,
+                   bool secure,
+                   const std::string& cert,
+                   const std::string& key)
+            : server_(nullptr), tls_cfg_(nullptr)
         {
             char rest_addr[128];
             nng_url* url;
@@ -184,18 +277,35 @@ namespace
             // from the argument list.
             snprintf(rest_addr,
                      sizeof(rest_addr),
-                     "http://%s:%d",
+                     "%s://%s:%d",
+                     secure ? "https" : "http",
                      ip_address.c_str(),
                      port);
             if ((rv = nng_url_parse(&url, rest_addr)) != 0) {
                 fatal("nng_url_parse", rv);
             }
-            std::unique_ptr<nng_url, void (*)(nng_url*)> free_url(url,
-                                                                  nng_url_free);
+            Deleter<nng_url> free_url(url, nng_url_free);
+
             // Get a suitable HTTP server instance.  This creates one
             // if it doesn't already exist.
             if ((rv = nng_http_server_hold(&server_, url)) != 0) {
                 fatal("nng_http_server_hold", rv);
+            }
+            if (secure) {
+                if ((rv = nng_tls_config_alloc(&tls_cfg_,
+                                               NNG_TLS_MODE_SERVER)) != 0) {
+                    fatal("nng_tls_config_alloc", rv);
+                }
+                if ((rv = nng_tls_config_own_cert(
+                         tls_cfg_,
+                         cert.empty() ? tls_cert : cert.c_str(),
+                         key.empty() ? tls_key : key.c_str(),
+                         NULL)) != 0) {
+                    fatal("nng_tls_config_own_cert", rv);
+                }
+                if ((rv = nng_http_server_set_tls(server_, tls_cfg_)) != 0) {
+                    fatal("nng_http_server_set_tls", rv);
+                }
             }
         }
         ~ServerImpl()
@@ -203,6 +313,9 @@ namespace
             if (server_ != nullptr) {
                 nng_http_server_stop(server_);
                 nng_http_server_release(server_);
+            }
+            if (tls_cfg_ != nullptr) {
+                nng_tls_config_free(tls_cfg_);
             }
         }
 
@@ -213,9 +326,9 @@ namespace
             handler_map.second.erase(id);
         }
 
-        std::unique_ptr<Route> addRoute(Method method,
-                                        const std::string& uri,
-                                        RouteHandler handler) override
+        std::unique_ptr<RouteToken> addRoute(Method method,
+                                             const std::string& uri,
+                                             RouteHandler handler) override
         {
             std::lock_guard<std::mutex> lock(handler_mutex_);
             auto m_str    = method_str[int(method)];
@@ -271,7 +384,7 @@ namespace
             r.reg_exp = std::move(re);
             r.handler = handler;
             handler_map.second.insert(std::make_pair(id, r));
-            return std::unique_ptr<Route>(new RouteImpl(
+            return std::unique_ptr<RouteToken>(new RouteTokenImpl(
                 [pThis, m_str, id] { pThis->removeRoute(m_str, id); }));
         }
 
@@ -281,6 +394,16 @@ namespace
             if ((rv = nng_http_server_start(server_)) != 0) {
                 fatal("nng_http_server_start", rv);
             }
+        }
+
+        int port() const override
+        {
+            nng_sockaddr addr;
+            int rv;
+            if ((rv = nng_http_server_get_addr(server_, &addr)) != 0) {
+                fatal("nng_http_server_get_port", rv);
+            }
+            return ntohs(addr.s_in.sa_port);
         }
 
     private:
@@ -387,7 +510,7 @@ namespace
 }  // namespace
 
 siesta::server::RouteHolder& siesta::server::RouteHolder::operator+=(
-    std::unique_ptr<Route> route)
+    std::unique_ptr<RouteToken> route)
 {
     routes_.push_back(std::move(route));
     return *this;
@@ -400,7 +523,23 @@ namespace siesta
         std::shared_ptr<Server> createServer(const std::string& ip_address,
                                              const int port)
         {
-            return std::make_shared<ServerImpl>(ip_address, port);
+            return std::make_shared<ServerImpl>(
+                ip_address, port, false, "", "");
         }
+
+        std::shared_ptr<siesta::server::Server> createSecureServer(
+            const std::string& ip_address,
+            const int port,
+            const std::string& cert /*= ""*/,
+            const std::string& key /*= ""*/)
+        {
+#if SIESTA_ENABLE_TLS
+            return std::make_shared<ServerImpl>(
+                ip_address, port, true, cert, key);
+#else
+            throw std::logic_error("SIESTA_ENABLE_TLS not set");
+#endif
+        }
+
     }  // namespace server
 }  // namespace siesta

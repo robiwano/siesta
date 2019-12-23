@@ -23,4 +23,5 @@ IndentWidth : 4
 NamespaceIndentation : All
 Standard : C++11
 TabWidth: 4
+IncludeBlocks: Preserve
 ---
