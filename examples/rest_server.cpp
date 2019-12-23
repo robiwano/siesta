@@ -47,11 +47,16 @@ int main(int argc, char** argv)
 
         h += server->addRoute(
             siesta::Method::GET,
-            "/api/rest/get",
+            "/api/([a-z]+)/get",
             [](const siesta::Request& req, siesta::Response& resp) {
                 //
-                auto queries = req.getQueries();
+                auto groups = req.getUriGroups();
                 std::stringstream retval;
+                retval << "Uri groups are:" << std::endl;
+                for (auto g : groups) {
+                    retval << g << std::endl;
+                }
+                auto queries = req.getQueries();
                 retval << "Queries:" << std::endl;
                 for (auto q : queries) {
                     retval << q.first << "=" << q.second << std::endl;

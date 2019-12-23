@@ -200,7 +200,7 @@ namespace
                           ? 1
                           : handler_map.second.rbegin()->first + 1;
             auto pThis = shared_from_this();
-            std::regex r(uri_regexp);
+            std::regex r(uri_regexp + ".*");
             handler_map.second.insert(
                 std::make_pair(id, std::make_pair(std::move(r), handler)));
             return std::unique_ptr<Route>(new RouteImpl(
@@ -261,28 +261,15 @@ namespace
                 std::string uri(nng_http_req_get_uri(request));
                 auto q_pos = uri.find('?');
                 if (q_pos != std::string::npos) {
+                    const std::regex r("([^=&]+)=([^=&]+)");
+                    std::smatch m;
                     std::string queries = uri.substr(q_pos + 1);
-                    uri                 = uri.substr(0, q_pos);
-                    q_pos               = 0;
-                    while (true) {
-                        auto amp_pos = queries.find_first_of('&', q_pos);
-                        size_t len   = amp_pos == std::string::npos
-                                         ? amp_pos
-                                         : amp_pos - q_pos;
-                        std::string query = queries.substr(q_pos, len);
-                        auto eq_pos       = query.find('=');
-                        if (eq_pos == std::string::npos) {
-                            nng_http_res_set_status(
-                                response, NNG_HTTP_STATUS_BAD_REQUEST);
-                            nng_http_res_set_reason(response,
-                                                    "malformed query");
-                            return true;
-                        }
-                        req.queries_.insert(std::make_pair(
-                            query.substr(0, eq_pos), query.substr(eq_pos + 1)));
-                        if (amp_pos == std::string::npos)
-                            break;
-                        q_pos = amp_pos + 1;
+                    std::string::const_iterator searchStart(queries.cbegin());
+                    while (
+                        std::regex_search(searchStart, queries.cend(), m, r)) {
+                        req.queries_.insert(
+                            std::make_pair(m[1].str(), m[2].str()));
+                        searchStart = m.suffix().first;
                     }
                 }
                 auto& handler_map = route_it->second;
