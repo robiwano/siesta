@@ -29,15 +29,47 @@ namespace
         throw std::runtime_error(buffer);
     }
 
+    template <class _Mutex>
+    class unlockable_lock_guard
+    {  // class with destructor that unlocks a mutex
+    public:
+        using mutex_type = _Mutex;
+
+        explicit unlockable_lock_guard(_Mutex& _Mtx) : _MyMutex(_Mtx)
+        {  // construct and lock
+            _MyMutex.lock();
+        }
+
+        ~unlockable_lock_guard() noexcept
+        {
+            if (_do_unlock)
+                _MyMutex.unlock();
+        }
+
+        void unlock()
+        {
+            _do_unlock = false;
+            _MyMutex.unlock();
+        }
+
+        unlockable_lock_guard(const unlockable_lock_guard&) = delete;
+        unlockable_lock_guard& operator=(const unlockable_lock_guard&) = delete;
+
+    private:
+        bool _do_unlock{true};
+        _Mutex& _MyMutex;
+    };
+
     class RequestImpl : public Request
     {
         nng_http_req* req_;
 
     public:
         RequestImpl(nng_http_req* req) : req_(req) {}
-        const std::vector<std::string>& getUriGroups() const override
+        const std::map<std::string, std::string>& getUriParameters()
+            const override
         {
-            return uri_groups_;
+            return uri_parameters_;
         }
 
         const std::map<std::string, std::string>& getQueries() const override
@@ -57,7 +89,7 @@ namespace
 
         std::string getBody() const override { return body_; }
 
-        std::vector<std::string> uri_groups_;
+        std::map<std::string, std::string> uri_parameters_;
         std::map<std::string, std::string> queries_;
         std::string body_;
     };
@@ -68,7 +100,10 @@ namespace
 
     public:
         ResponseImpl(nng_http_res* res) : res_(res) {}
-        void setHttpStatus(int status) override { status_ = status; }
+        void setHttpStatus(siesta::HttpStatus status) override
+        {
+            status_ = status;
+        }
 
         void addHeader(const std::string& key,
                        const std::string& value) override
@@ -87,7 +122,7 @@ namespace
         void setBody(const std::string& data) override { body_ = data; }
 
         std::string body_;
-        int status_{200};
+        siesta::HttpStatus status_{siesta::HttpStatus::OK};
     };
 
     struct RouteImpl : public Route {
@@ -103,17 +138,18 @@ namespace
         std::mutex handler_mutex_;
         nng_http_server* server_;
 
-        std::map<
-            std::string,
-            std::pair<
-                nng_http_handler*,
-                std::map<int, std::pair<std::regex, siesta::RouteHandler>>>>
+        struct route {
+            std::regex reg_exp;
+            std::vector<std::string> uri_param_key;
+            siesta::RouteHandler handler;
+        };
+
+        std::map<std::string,
+                 std::pair<nng_http_handler*, std::map<int, route>>>
             routes_;
 
     public:
-        ServerImpl(const std::string& ip_address,
-                   const int port,
-                   const bool secure)
+        ServerImpl(const std::string& ip_address, const int port)
             : server_(nullptr)
         {
             char rest_addr[128];
@@ -123,8 +159,7 @@ namespace
             // from the argument list.
             snprintf(rest_addr,
                      sizeof(rest_addr),
-                     "%s://%s:%d",
-                     secure ? "https" : "http",
+                     "http://%s:%d",
                      ip_address.c_str(),
                      port);
             if ((rv = nng_url_parse(&url, rest_addr)) != 0) {
@@ -154,7 +189,7 @@ namespace
         }
 
         std::unique_ptr<Route> addRoute(Method method,
-                                        const std::string& uri_regexp,
+                                        const std::string& uri,
                                         RouteHandler handler) override
         {
             std::lock_guard<std::mutex> lock(handler_mutex_);
@@ -200,9 +235,19 @@ namespace
                           ? 1
                           : handler_map.second.rbegin()->first + 1;
             auto pThis = shared_from_this();
-            std::regex r(uri_regexp);
-            handler_map.second.insert(
-                std::make_pair(id, std::make_pair(std::move(r), handler)));
+
+            route r;
+            std::string uri_re = uri;
+            const std::regex re_param(":([^/]+)");
+            std::smatch m;
+            while (std::regex_search(uri_re, m, re_param)) {
+                r.uri_param_key.push_back(m[1].str());
+                uri_re.replace(m[0].first, m[0].second, "([^/]+)");
+            }
+            std::regex re(uri_re);
+            r.reg_exp = std::move(re);
+            r.handler = handler;
+            handler_map.second.insert(std::make_pair(id, r));
             return std::unique_ptr<Route>(new RouteImpl(
                 [pThis, m_str, id] { pThis->removeRoute(m_str, id); }));
         }
@@ -250,9 +295,9 @@ namespace
 
         bool handle_rest_request(nng_http_req* request, nng_http_res* response)
         {
-            std::string retval;
             const char* method = nng_http_req_get_method(request);
-            auto route_it      = routes_.find(method);
+            unlockable_lock_guard<std::mutex> lock(handler_mutex_);
+            auto route_it = routes_.find(method);
             if (route_it != routes_.end()) {
                 RequestImpl req(request);
                 void* data = NULL;
@@ -275,19 +320,25 @@ namespace
                 auto& handler_map = route_it->second;
                 for (const auto& entry : handler_map.second) {
                     std::smatch m;
-                    if (!std::regex_match(uri, m, entry.second.first)) {
+                    if (!std::regex_match(uri, m, entry.second.reg_exp)) {
                         continue;
                     }
                     if (m.size() > 1) {
+                        if (entry.second.uri_param_key.size() != m.size() - 1) {
+                            throw std::runtime_error("Uri parameter error");
+                        }
                         for (size_t i = 1; i < m.size(); ++i) {
-                            req.uri_groups_.push_back(m[i].str());
+                            req.uri_parameters_.insert(std::make_pair(
+                                entry.second.uri_param_key[i - 1], m[i].str()));
                         }
                     }
                     if (data != nullptr) {
                         req.body_.assign((const char*)data, sz);
                     }
                     ResponseImpl resp(response);
-                    (entry.second.second)(req, resp);
+                    auto h = entry.second.handler;
+                    lock.unlock();
+                    h(req, resp);
                     if (!resp.body_.empty()) {
                         int rv = nng_http_res_copy_data(
                             response, resp.body_.data(), resp.body_.length());
@@ -296,8 +347,9 @@ namespace
                                 "Failed to copy data to response");
                         }
                     }
-                    if (resp.status_ != NNG_HTTP_STATUS_OK) {
-                        nng_http_res_set_status(response, resp.status_);
+                    if (resp.status_ != siesta::HttpStatus::OK) {
+                        nng_http_res_set_status(response,
+                                                uint16_t(resp.status_));
                     }
                     return true;
                 }
@@ -319,7 +371,7 @@ namespace siesta
     std::shared_ptr<Server> createServer(const std::string& ip_address,
                                          const int port)
     {
-        return std::make_shared<ServerImpl>(ip_address, port, false);
+        return std::make_shared<ServerImpl>(ip_address, port);
     }
 
 }  // namespace siesta

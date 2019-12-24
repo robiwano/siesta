@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include "http_status.h"
+
 namespace siesta
 {
     class Route
@@ -33,8 +35,9 @@ namespace siesta
     class Request
     {
     public:
-        virtual ~Request()                                           = default;
-        virtual const std::vector<std::string>& getUriGroups() const = 0;
+        virtual ~Request() = default;
+        virtual const std::map<std::string, std::string>& getUriParameters()
+            const = 0;
         virtual const std::map<std::string, std::string>& getQueries()
             const                                                   = 0;
         virtual std::string getHeader(const std::string& key) const = 0;
@@ -45,7 +48,7 @@ namespace siesta
     {
     public:
         virtual ~Response()                              = default;
-        virtual void setHttpStatus(int status)           = 0;
+        virtual void setHttpStatus(HttpStatus status)    = 0;
         virtual void addHeader(const std::string& key,
                                const std::string& value) = 0;
         // Set the body of the response
@@ -61,15 +64,11 @@ namespace siesta
         virtual ~Server() = default;
         virtual [[nodiscard]] std::unique_ptr<Route> addRoute(
             Method method,
-            const std::string& uri_regexp,
+            const std::string& uri,
             RouteHandler handler) = 0;
         virtual void start()      = 0;
     };
 
     std::shared_ptr<Server> createServer(const std::string& ip_address,
                                          const int port);
-
-    // TODO:
-    // std::shared_ptr<Server> createSecureServer(const std::string& ip_address,
-    // const int port);
 }  // namespace siesta

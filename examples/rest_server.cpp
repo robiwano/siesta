@@ -32,14 +32,14 @@ int main(int argc, char** argv)
 
         h += server->addRoute(
             siesta::Method::PUT,
-            "/api/([a-z]+)/test",
+            "/api/:name/test",
             [](const siesta::Request& req, siesta::Response& resp) {
                 //
-                auto groups = req.getUriGroups();
+                const auto& params = req.getUriParameters();
                 std::stringstream retval;
-                retval << "Uri groups are:" << std::endl;
-                for (auto g : groups) {
-                    retval << g << std::endl;
+                retval << "Uri parameters:" << std::endl;
+                for (auto p : params) {
+                    retval << p.first << "=" << p.second << std::endl;
                 }
                 retval << "Body:" << std::endl << req.getBody();
                 resp.setBody(retval.str());
@@ -47,16 +47,16 @@ int main(int argc, char** argv)
 
         h += server->addRoute(
             siesta::Method::GET,
-            "/api/([a-z]+)/get",
+            "/api/:name/:index",
             [](const siesta::Request& req, siesta::Response& resp) {
                 //
-                auto groups = req.getUriGroups();
+                const auto& params = req.getUriParameters();
                 std::stringstream retval;
-                retval << "Uri groups are:" << std::endl;
-                for (auto g : groups) {
-                    retval << g << std::endl;
+                retval << "Uri parameters:" << std::endl;
+                for (auto p : params) {
+                    retval << p.first << "=" << p.second << std::endl;
                 }
-                auto queries = req.getQueries();
+                const auto& queries = req.getQueries();
                 retval << "Queries:" << std::endl;
                 for (auto q : queries) {
                     retval << q.first << "=" << q.second << std::endl;

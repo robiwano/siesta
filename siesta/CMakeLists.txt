@@ -3,6 +3,7 @@ set(SOURCES
 )
 
 set(HEADERS
+    include/siesta/http_status.h
     include/siesta/server.h
 )
 
