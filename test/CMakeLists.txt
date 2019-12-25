@@ -1,6 +1,7 @@
 set(
     TEST_SRC
     rest_server
+    http_client
 )
 
 foreach(T ${TEST_SRC})

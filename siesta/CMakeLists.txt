@@ -1,9 +1,11 @@
 set(SOURCES
     src/server.cpp
+    src/client.cpp
 )
 
 set(HEADERS
-    include/siesta/http_status.h
+    include/siesta/client.h
+    include/siesta/common.h
     include/siesta/server.h
 )
 

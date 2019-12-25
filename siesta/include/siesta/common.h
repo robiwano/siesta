@@ -2,6 +2,15 @@
 
 namespace siesta
 {
+    enum class Method {
+        POST,
+        PUT,
+        GET,
+        PATCH,
+        DELETE,
+        Method_COUNT_DO_NOT_USE,
+    };
+
     enum class HttpStatus {
         CONTINUE                 = 100,
         SWITCHING                = 101,
@@ -63,4 +72,4 @@ namespace siesta
         NOT_EXTENDED             = 510,
         NETWORK_AUTH_REQUIRED    = 511,
     };
-}
+}  // namespace siesta

@@ -10,6 +10,7 @@
 #include <stdexcept>
 
 using namespace siesta;
+using namespace siesta::server;
 
 namespace
 {
@@ -165,7 +166,7 @@ namespace
         struct route {
             std::regex reg_exp;
             std::vector<std::string> uri_param_key;
-            siesta::RouteHandler handler;
+            RouteHandler handler;
         };
 
         std::map<std::string,
@@ -385,7 +386,7 @@ namespace
     };
 }  // namespace
 
-siesta::RouteHolder& siesta::RouteHolder::operator+=(
+siesta::server::RouteHolder& siesta::server::RouteHolder::operator+=(
     std::unique_ptr<Route> route)
 {
     routes_.push_back(std::move(route));
@@ -394,10 +395,12 @@ siesta::RouteHolder& siesta::RouteHolder::operator+=(
 
 namespace siesta
 {
-    std::shared_ptr<Server> createServer(const std::string& ip_address,
-                                         const int port)
+    namespace server
     {
-        return std::make_shared<ServerImpl>(ip_address, port);
-    }
-
+        std::shared_ptr<Server> createServer(const std::string& ip_address,
+                                             const int port)
+        {
+            return std::make_shared<ServerImpl>(ip_address, port);
+        }
+    }  // namespace server
 }  // namespace siesta
