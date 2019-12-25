@@ -14,39 +14,82 @@ int main(int argc, char** argv)
 
         bool stop_server = false;
 
+        std::map<std::string, std::string> resource;
+
         siesta::RouteHolder h;
         h += server->addRoute(
+            siesta::Method::POST,
+            "/shutdown",
+            [&](const siesta::Request&, siesta::Response& res) {
+                stop_server = true;
+                res.setBody("OK");
+            });
+
+        h += server->addRoute(
             siesta::Method::GET,
-            "/barf",
-            [](const siesta::Request&, siesta::Response&) {
-                throw std::runtime_error("This will end up as error message");
+            "/api",
+            [&](const siesta::Request& req, siesta::Response& res) {
+                std::stringstream body;
+                for (auto it : resource) {
+                    body << req.getUri() << "/" << it.first << std::endl;
+                }
+                res.setBody(body.str());
             });
 
         h += server->addRoute(
             siesta::Method::POST,
-            "/shutdown",
-            [&](const siesta::Request&, siesta::Response& req) {
-                stop_server = true;
-                req.setBody("OK");
-            });
-
-        h += server->addRoute(
-            siesta::Method::PUT,
-            "/api/:name/test",
-            [](const siesta::Request& req, siesta::Response& resp) {
-                //
-                const auto& params = req.getUriParameters();
-                std::stringstream retval;
-                retval << "Uri parameters:" << std::endl;
-                for (auto p : params) {
-                    retval << p.first << "=" << p.second << std::endl;
+            "/api/:name",
+            [&](const siesta::Request& req, siesta::Response& res) {
+                auto name = req.getUriParameters().at("name");
+                auto it   = resource.find(name);
+                if (it != resource.end()) {
+                    res.setHttpStatus(siesta::HttpStatus::CONFLICT, "Element '" + name + "' already exists");
+                    return;
                 }
-                retval << "Body:" << std::endl << req.getBody();
-                resp.setBody(retval.str());
+                resource[name] = req.getBody();
             });
 
         h += server->addRoute(
             siesta::Method::GET,
+            "/api/:name",
+            [&](const siesta::Request& req, siesta::Response& res) {
+                auto name = req.getUriParameters().at("name");
+                auto it   = resource.find(name);
+                if (it == resource.end()) {
+                    res.setHttpStatus(siesta::HttpStatus::NOT_FOUND);
+                    return;
+                }
+                res.setBody(it->second);
+            });
+
+        h += server->addRoute(
+            siesta::Method::PUT,
+            "/api/:name",
+            [&](const siesta::Request& req, siesta::Response& res) {
+                auto name = req.getUriParameters().at("name");
+                auto it   = resource.find(name);
+                if (it == resource.end()) {
+                    res.setHttpStatus(siesta::HttpStatus::NOT_FOUND);
+                    return;
+                }
+                it->second = req.getBody();
+            });
+
+        h += server->addRoute(
+            siesta::Method::DELETE,
+            "/api/:name",
+            [&](const siesta::Request& req, siesta::Response& res) {
+                auto name = req.getUriParameters().at("name");
+                auto it   = resource.find(name);
+                if (it == resource.end()) {
+                    res.setHttpStatus(siesta::HttpStatus::NOT_FOUND);
+                    return;
+                }
+                resource.erase(it);
+            });
+
+        h += server->addRoute(
+            siesta::Method::PATCH,
             "/api/:name/:index",
             [](const siesta::Request& req, siesta::Response& resp) {
                 //

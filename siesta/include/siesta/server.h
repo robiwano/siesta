@@ -30,12 +30,15 @@ namespace siesta
         GET,
         PATCH,
         DELETE,
+        Method_COUNT_DO_NOT_USE,
     };
 
     class Request
     {
     public:
-        virtual ~Request() = default;
+        virtual ~Request()                        = default;
+        virtual const std::string& getUri() const = 0;
+        virtual const Method getMethod() const    = 0;
         virtual const std::map<std::string, std::string>& getUriParameters()
             const = 0;
         virtual const std::map<std::string, std::string>& getQueries()
@@ -47,10 +50,11 @@ namespace siesta
     class Response
     {
     public:
-        virtual ~Response()                              = default;
-        virtual void setHttpStatus(HttpStatus status)    = 0;
+        virtual ~Response() = default;
+        virtual void setHttpStatus(HttpStatus status,
+                                   const std::string& optional_reason = "") = 0;
         virtual void addHeader(const std::string& key,
-                               const std::string& value) = 0;
+                               const std::string& value)                    = 0;
         // Set the body of the response
         virtual void setBody(const void* data, size_t size) = 0;
         virtual void setBody(const std::string& data)       = 0;

@@ -20,6 +20,7 @@ namespace
         "PATCH",
         "DELETE",
     };
+    static auto method_str_cnt = int(Method::Method_COUNT_DO_NOT_USE);
 
     // utility function
     void fatal(const char* what, int rv)
@@ -65,7 +66,25 @@ namespace
         nng_http_req* req_;
 
     public:
-        RequestImpl(nng_http_req* req) : req_(req) {}
+        RequestImpl(nng_http_req* req)
+            : req_(req), my_uri_(nng_http_req_get_uri(req))
+        {
+        }
+
+        const std::string& getUri() const override { return my_uri_; }
+
+        const Method getMethod() const override
+        {
+            auto m = nng_http_req_get_method(req_);
+            for (int i = 0; i < method_str_cnt; ++i) {
+                if (strcmp(m, method_str[i]) == 0) {
+                    return static_cast<Method>(i);
+                }
+            }
+            throw std::runtime_error("non recognized method: " +
+                                     std::string(m));
+        }
+
         const std::map<std::string, std::string>& getUriParameters()
             const override
         {
@@ -89,10 +108,11 @@ namespace
 
         std::string getBody() const override { return body_; }
 
+        const std::string my_uri_;
         std::map<std::string, std::string> uri_parameters_;
         std::map<std::string, std::string> queries_;
         std::string body_;
-    };
+    };  // namespace
 
     class ResponseImpl : public Response
     {
@@ -100,9 +120,12 @@ namespace
 
     public:
         ResponseImpl(nng_http_res* res) : res_(res) {}
-        void setHttpStatus(siesta::HttpStatus status) override
+        void setHttpStatus(
+            siesta::HttpStatus status,
+            const std::string& optional_reason /* = "" */) override
         {
             status_ = status;
+            reason_ = optional_reason;
         }
 
         void addHeader(const std::string& key,
@@ -123,6 +146,7 @@ namespace
 
         std::string body_;
         siesta::HttpStatus status_{siesta::HttpStatus::OK};
+        std::string reason_;
     };
 
     struct RouteImpl : public Route {
@@ -196,8 +220,6 @@ namespace
             auto m_str    = method_str[int(method)];
             auto route_it = routes_.find(m_str);
             if (route_it == routes_.end()) {
-                // Allocate the handler - we use a dynamic handler for REST
-                // using the function "rest_handle" declared above.
                 nng_http_handler* handler;
                 int rv = nng_http_handler_alloc(&handler, NULL, rest_handle);
                 if (rv != 0) {
@@ -210,8 +232,7 @@ namespace
                     0) {
                     fatal("nng_http_handler_set_data", rv);
                 }
-                if ((rv = nng_http_handler_set_method(
-                         handler, method_str[int(method)])) != 0) {
+                if ((rv = nng_http_handler_set_method(handler, m_str)) != 0) {
                     fatal("nng_http_handler_set_method", rv);
                 }
                 // We want to collect the body, and we (arbitrarily) limit this
@@ -238,6 +259,7 @@ namespace
 
             route r;
             std::string uri_re = uri;
+            // Parse URI parameters (starting with ':')
             const std::regex re_param(":([^/]+)");
             std::smatch m;
             while (std::regex_search(uri_re, m, re_param)) {
@@ -350,6 +372,10 @@ namespace
                     if (resp.status_ != siesta::HttpStatus::OK) {
                         nng_http_res_set_status(response,
                                                 uint16_t(resp.status_));
+                        if (!resp.reason_.empty()) {
+                            nng_http_res_set_reason(response,
+                                                    resp.reason_.c_str());
+                        }
                     }
                     return true;
                 }
