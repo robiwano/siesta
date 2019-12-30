@@ -1,5 +1,6 @@
 set(
     EXAMPLE_SRC
+    rest_client
     rest_server
 )
 
