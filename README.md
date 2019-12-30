@@ -93,7 +93,7 @@ int main(int argc, char** argv)
 
         server::RouteHolder h;
 
-		// Must hold on to the returned RouteToken, otherwise the route will
+        // Must hold on to the returned RouteToken, otherwise the route will
         // be removed when the RouteToken is destroyed.
         h += server->addRoute(
             Method::GET,
