@@ -2,7 +2,7 @@
 
 Siesta is a minimalistic HTTP and REST framework for C++, written in pure-C++11, based upon NNG ([Nanomsg-Next-Generation](https://nng.nanomsg.org/)).
 
-The design goals for Siesta has been:
+The design goals for Siesta are:
 
 - Minimalistic and simple interface.
 - Dynamic route creation and removal.
@@ -11,6 +11,8 @@ The design goals for Siesta has been:
 - Cross platform.
 
 Siesta will basically run on any platform supported by NNG. These are (taken from NNG Github Readme): Linux, macOS, Windows (Vista or better), illumos, Solaris, FreeBSD, Android, and iOS.
+
+Since payloads are plain strings/data, you're free to use any layer on top of this, f.i. JSON or XML.
 
 # Features
 
@@ -62,6 +64,8 @@ You will need a compiler supporting C++11 and C99, and [CMake](https://cmake.org
 
 If you need TLS support, set the SIESTA_ENABLE_TLS CMake variable to ON. This will make CMake download [ARM mbedTLS](https://tls.mbed.org/) upon configuration and enable TLS support for NNG.
 
+**Note:** When using ARM mbedTLS, the license will change to [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0).
+
 ## Quick start
 
 To build in a Linux environment:
@@ -85,8 +89,8 @@ using namespace siesta;
 int main(int argc, char** argv)
 {
     try {
-        // use server::createSecureServer for TLS support.
-        auto server = server::createServer("*", 9080);
+        // Use "https://...." for a secure server
+        auto server = server::createServer("http://127.0.0.1:9080");
         server->start();
         std::cout << "Server started, listening on port " << server->port()
                   << std::endl;
@@ -117,7 +121,6 @@ int main(int argc, char** argv)
 
 ```cpp
 #include <siesta/client.h>
-
 #include <iostream>
 
 using namespace siesta;
@@ -127,7 +130,7 @@ int main(int argc, char** argv)
     try {
         auto f        = client::getRequest("http://127.0.0.1:9080/", 1000);
         auto response = f.get();
-        std::cout << response->getBody() << std::endl;
+        std::cout << response << std::endl;
     } catch (std::exception& e) {
         std::cerr << e.what() << std::endl;
     }

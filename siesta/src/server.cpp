@@ -22,9 +22,7 @@ using namespace siesta::server;
 
 namespace
 {
-    // These keys are for demonstration purposes ONLY.  DO NOT USE.
-    // The certificate is valid for 100 years, because I don't want to
-    // have to regenerate it ever again. The CN is 127.0.0.1, and self-signed.
+    // This self-signed certificate is valid for 100 years. The CN is 127.0.0.1.
     //
     // Generated using openssl:
     //
@@ -108,8 +106,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
     };
     static auto method_str_cnt = int(Method::Method_COUNT_DO_NOT_USE);
 
-    // utility function
-    void fatal(const char* what, int rv)
+    static void fatal(const char* what, int rv)
     {
         char buffer[256];
         snprintf(buffer, sizeof(buffer), "%s: %s", what, nng_strerror(rv));
@@ -249,8 +246,9 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                        public std::enable_shared_from_this<ServerImpl>
     {
         std::mutex handler_mutex_;
-        nng_http_server* server_;
-        nng_tls_config* tls_cfg_;
+        nng_http_server* server_{nullptr};
+        nng_tls_config* tls_cfg_{nullptr};
+        bool started_{false};
 
         struct route {
             std::regex reg_exp;
@@ -263,49 +261,30 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             routes_;
 
     public:
-        ServerImpl(const std::string& ip_address,
-                   const int port,
-                   bool secure,
-                   const std::string& cert,
-                   const std::string& key)
-            : server_(nullptr), tls_cfg_(nullptr)
+        ServerImpl(const std::string& address)
         {
-            char rest_addr[128];
             nng_url* url;
             int rv;
-            // Set up some strings, etc.  We use the port number
-            // from the argument list.
-            snprintf(rest_addr,
-                     sizeof(rest_addr),
-                     "%s://%s:%d",
-                     secure ? "https" : "http",
-                     ip_address.c_str(),
-                     port);
-            if ((rv = nng_url_parse(&url, rest_addr)) != 0) {
+            if ((rv = nng_url_parse(&url, address.c_str())) != 0) {
                 fatal("nng_url_parse", rv);
             }
             Deleter<nng_url> free_url(url, nng_url_free);
 
-            // Get a suitable HTTP server instance.  This creates one
-            // if it doesn't already exist.
-            if ((rv = nng_http_server_hold(&server_, url)) != 0) {
-                fatal("nng_http_server_hold", rv);
-            }
+            const bool secure = (strcmp(url->u_scheme, "https") == 0);
             if (secure) {
+#if !SIESTA_ENABLE_TLS
+                throw std::logic_error(
+                    "SIESTA_ENABLE_TLS must be set to ON for https");
+#endif
                 if ((rv = nng_tls_config_alloc(&tls_cfg_,
                                                NNG_TLS_MODE_SERVER)) != 0) {
                     fatal("nng_tls_config_alloc", rv);
                 }
-                if ((rv = nng_tls_config_own_cert(
-                         tls_cfg_,
-                         cert.empty() ? tls_cert : cert.c_str(),
-                         key.empty() ? tls_key : key.c_str(),
-                         NULL)) != 0) {
-                    fatal("nng_tls_config_own_cert", rv);
-                }
-                if ((rv = nng_http_server_set_tls(server_, tls_cfg_)) != 0) {
-                    fatal("nng_http_server_set_tls", rv);
-                }
+            }
+            // Get a suitable HTTP(S) server instance.  This creates one
+            // if it doesn't already exist.
+            if ((rv = nng_http_server_hold(&server_, url)) != 0) {
+                fatal("nng_http_server_hold", rv);
             }
         }
         ~ServerImpl()
@@ -388,16 +367,50 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                 [pThis, m_str, id] { pThis->removeRoute(m_str, id); }));
         }
 
+        void addCertificate(const std::string& cert,
+                            const std::string& key,
+                            const std::string& pass) override
+        {
+            if (tls_cfg_ == nullptr) {
+                throw std::logic_error("Server doesn't support TLS");
+            }
+            if (started_) {
+                throw std::runtime_error("Server already started");
+            }
+            int rv;
+            if ((rv = nng_tls_config_own_cert(
+                     tls_cfg_,
+                     cert.empty() ? tls_cert : cert.c_str(),
+                     key.empty() ? tls_key : key.c_str(),
+                     pass.empty() ? NULL : pass.c_str())) != 0) {
+                fatal("nng_tls_config_own_cert", rv);
+            }
+        }
+
         void start() override
         {
             int rv;
+            if (started_) {
+                throw std::runtime_error("Server already started");
+            }
+            if (tls_cfg_ != nullptr) {
+                // Always add our own self-signed cert for CN=127.0.0.1
+                addCertificate(tls_cert, tls_key, "");
+                if ((rv = nng_http_server_set_tls(server_, tls_cfg_)) != 0) {
+                    fatal("nng_http_server_set_tls", rv);
+                }
+            }
             if ((rv = nng_http_server_start(server_)) != 0) {
                 fatal("nng_http_server_start", rv);
             }
+            started_ = true;
         }
 
         int port() const override
         {
+            if (!started_) {
+                throw std::runtime_error("Server not started");
+            }
             nng_sockaddr addr;
             int rv;
             if ((rv = nng_http_server_get_addr(server_, &addr)) != 0) {
@@ -446,9 +459,6 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             auto route_it = routes_.find(method);
             if (route_it != routes_.end()) {
                 RequestImpl req(request);
-                void* data = NULL;
-                size_t sz  = 0ULL;
-                nng_http_req_get_data(request, &data, &sz);
                 std::string uri(nng_http_req_get_uri(request));
                 auto q_pos = uri.find('?');
                 if (q_pos != std::string::npos) {
@@ -478,6 +488,9 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                                 entry.second.uri_param_key[i - 1], m[i].str()));
                         }
                     }
+                    void* data = nullptr;
+                    size_t sz  = 0ULL;
+                    nng_http_req_get_data(request, &data, &sz);
                     if (data != nullptr) {
                         req.body_.assign((const char*)data, sz);
                     }
@@ -509,37 +522,19 @@ zFX5yAtcD5BnoPBo0CE5y/I=
     };
 }  // namespace
 
-siesta::server::RouteHolder& siesta::server::RouteHolder::operator+=(
-    std::unique_ptr<RouteToken> route)
+void siesta::server::RouteHolder::operator+=(std::unique_ptr<RouteToken> route)
 {
     routes_.push_back(std::move(route));
-    return *this;
 }
 
 namespace siesta
 {
     namespace server
     {
-        std::shared_ptr<Server> createServer(const std::string& ip_address,
-                                             const int port)
+        std::shared_ptr<siesta::server::Server> createServer(
+            const std::string& address)
         {
-            return std::make_shared<ServerImpl>(
-                ip_address, port, false, "", "");
+            return std::make_shared<ServerImpl>(address);
         }
-
-        std::shared_ptr<siesta::server::Server> createSecureServer(
-            const std::string& ip_address,
-            const int port,
-            const std::string& cert /*= ""*/,
-            const std::string& key /*= ""*/)
-        {
-#if SIESTA_ENABLE_TLS
-            return std::make_shared<ServerImpl>(
-                ip_address, port, true, cert, key);
-#else
-            throw std::logic_error("SIESTA_ENABLE_TLS not set");
-#endif
-        }
-
     }  // namespace server
 }  // namespace siesta

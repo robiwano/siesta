@@ -24,15 +24,16 @@ if (SIESTA_ENABLE_TLS)
     include(FetchContent)
     FetchContent_Declare(
         mbedtls
-        GIT_REPOSITORY https://github.com/ARMmbed/mbedtls.git
-        GIT_TAG        yotta-2.3.2
+        URL      https://tls.mbed.org/download/mbedtls-2.16.3-apache.tgz
+        URL_HASH SHA1=dce8550f8f9465f3aea44cb7d0f9d0ba8140034a
     )
     FetchContent_GetProperties(mbedtls)
     if(NOT mbedtls_POPULATED)
+        message("Downloading ARM mbedTLS...")
         FetchContent_Populate(mbedtls)
         set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
         set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
-        set(INSTALL_MBEDTLS_HEADERS CACHE BOOL "" FORCE)
+        set(INSTALL_MBEDTLS_HEADERS OFF CACHE BOOL "" FORCE)
         add_subdirectory(${mbedtls_SOURCE_DIR} ${mbedtls_BINARY_DIR})
         target_include_directories(mbedtls PUBLIC $<BUILD_INTERFACE:${mbedtls_SOURCE_DIR}/include>)
         install (TARGETS mbedtls mbedx509 mbedcrypto
