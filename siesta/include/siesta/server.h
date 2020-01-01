@@ -23,7 +23,7 @@ namespace siesta
             std::vector<std::unique_ptr<RouteToken>> routes_;
 
         public:
-            RouteHolder& operator+=(std::unique_ptr<RouteToken> route);
+            void operator+=(std::unique_ptr<RouteToken> route);
         };
 
         class Request
@@ -60,21 +60,24 @@ namespace siesta
         {
         public:
             virtual ~Server() = default;
+
+            // Hold on to returned token to keep route "alive"
             [[nodiscard]] virtual std::unique_ptr<RouteToken> addRoute(
                 Method method,
                 const std::string& uri,
                 RouteHandler handler) = 0;
-            virtual void start()      = 0;
-            virtual int port() const  = 0;  // Only valid after start
+
+            // Must be called before server is started
+            virtual void addCertificate(const std::string& cert,
+                                        const std::string& key,
+                                        const std::string& passwd = "") = 0;
+            virtual void start()                                        = 0;
+
+            // Only valid after start
+            virtual int port() const = 0;
         };
 
-        std::shared_ptr<Server> createServer(const std::string& ip_address,
-                                             const int port = 0);
+        std::shared_ptr<Server> createServer(const std::string& address);
 
-        std::shared_ptr<Server> createSecureServer(
-            const std::string& ip_address,
-            const int port          = 0,
-            const std::string& cert = "",
-            const std::string& key  = "");
     }  // namespace server
 }  // namespace siesta

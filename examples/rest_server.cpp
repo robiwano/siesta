@@ -11,11 +11,11 @@ using namespace siesta;
 int main(int argc, char** argv)
 {
     try {
-        int port = 0;
+        std::string addr = "http://127.0.0.1:9080";
         if (argc > 1) {
-            port = atoi(argv[1]);
+            addr = argv[1];
         }
-        auto server = server::createServer("127.0.0.1", port);
+        auto server = server::createServer(addr);
         server->start();
         std::cout << "Server started, listening on port " << server->port()
                   << std::endl;
