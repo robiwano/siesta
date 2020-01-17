@@ -43,10 +43,7 @@ namespace siesta
         class Response
         {
         public:
-            virtual ~Response() = default;
-            virtual void setHttpStatus(
-                HttpStatus status,
-                const std::string& optional_reason = "")     = 0;
+            virtual ~Response()                              = default;
             virtual void addHeader(const std::string& key,
                                    const std::string& value) = 0;
             // Set the body of the response
@@ -66,6 +63,10 @@ namespace siesta
                 Method method,
                 const std::string& uri,
                 RouteHandler handler) = 0;
+
+            [[nodiscard]] virtual std::unique_ptr<RouteToken> addDirectory(
+                const std::string& uri,
+                const std::string& path) = 0;
 
             // Must be called before server is started
             virtual void addCertificate(const std::string& cert,

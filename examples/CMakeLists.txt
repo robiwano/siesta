@@ -1,7 +1,24 @@
+include(FetchContent)
+
+include(FetchContent)
+FetchContent_Declare(
+  ghcfilesystem
+  GIT_REPOSITORY https://github.com/gulrak/filesystem.git
+  GIT_TAG        v1.2.10
+)
+
+FetchContent_GetProperties(ghcfilesystem)
+if(NOT ghcfilesystem_POPULATED)
+  FetchContent_Populate(ghcfilesystem)
+  add_subdirectory(${ghcfilesystem_SOURCE_DIR} ${ghcfilesystem_BINARY_DIR})
+endif()
+
+
 set(
     EXAMPLE_SRC
     rest_client
     rest_server
+    static_file_server
 )
 
 foreach(E ${EXAMPLE_SRC})
@@ -13,7 +30,7 @@ foreach(E ${EXAMPLE_SRC})
     endif()
 
     target_include_directories(${EXAMPLE_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-    target_link_libraries(${EXAMPLE_NAME} siesta)
+    target_link_libraries(${EXAMPLE_NAME} siesta ghc_filesystem)
     set_target_properties(${EXAMPLE_NAME}
         PROPERTIES
         FOLDER "Examples"

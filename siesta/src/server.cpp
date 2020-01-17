@@ -116,37 +116,6 @@ zFX5yAtcD5BnoPBo0CE5y/I=
     template <typename Type>
     using Deleter = std::unique_ptr<Type, void (*)(Type*)>;
 
-    template <class _Mutex>
-    class unlockable_lock_guard
-    {  // class with destructor that unlocks a mutex
-    public:
-        using mutex_type = _Mutex;
-
-        explicit unlockable_lock_guard(_Mutex& _Mtx) : _MyMutex(_Mtx)
-        {  // construct and lock
-            _MyMutex.lock();
-        }
-
-        ~unlockable_lock_guard() noexcept
-        {
-            if (_do_unlock)
-                _MyMutex.unlock();
-        }
-
-        void unlock()
-        {
-            _do_unlock = false;
-            _MyMutex.unlock();
-        }
-
-        unlockable_lock_guard(const unlockable_lock_guard&) = delete;
-        unlockable_lock_guard& operator=(const unlockable_lock_guard&) = delete;
-
-    private:
-        bool _do_unlock{true};
-        _Mutex& _MyMutex;
-    };
-
     class RequestImpl : public Request
     {
         nng_http_req* req_;
@@ -206,13 +175,6 @@ zFX5yAtcD5BnoPBo0CE5y/I=
 
     public:
         ResponseImpl(nng_http_res* res) : res_(res) {}
-        void setHttpStatus(
-            siesta::HttpStatus status,
-            const std::string& optional_reason /* = "" */) override
-        {
-            status_ = status;
-            reason_ = optional_reason;
-        }
 
         void addHeader(const std::string& key,
                        const std::string& value) override
@@ -225,14 +187,16 @@ zFX5yAtcD5BnoPBo0CE5y/I=
 
         void setBody(const void* data, size_t size) override
         {
-            body_.assign((const char*)data, size);
+            int rv;
+            if ((rv = nng_http_res_copy_data(res_, data, size)) != 0) {
+                fatal("nng_http_res_copy_data", rv);
+            }
         }
 
-        void setBody(const std::string& data) override { body_ = data; }
-
-        std::string body_;
-        siesta::HttpStatus status_{siesta::HttpStatus::OK};
-        std::string reason_;
+        void setBody(const std::string& data) override
+        {
+            setBody(data.data(), data.size());
+        }
     };
 
     struct RouteTokenImpl : public RouteToken {
@@ -245,7 +209,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
     class ServerImpl : public Server,
                        public std::enable_shared_from_this<ServerImpl>
     {
-        std::mutex handler_mutex_;
+        std::recursive_mutex handler_mutex_;
         nng_http_server* server_{nullptr};
         nng_tls_config* tls_cfg_{nullptr};
         bool started_{false};
@@ -259,6 +223,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
         std::map<std::string,
                  std::pair<nng_http_handler*, std::map<int, route>>>
             routes_;
+        std::map<int, nng_http_handler*> directories_;
 
     public:
         ServerImpl(const std::string& address)
@@ -300,16 +265,26 @@ zFX5yAtcD5BnoPBo0CE5y/I=
 
         void removeRoute(const char* method, int id)
         {
-            std::lock_guard<std::mutex> lock(handler_mutex_);
+            std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
             auto& handler_map = routes_[method];
             handler_map.second.erase(id);
+        }
+
+        void removeDirectory(int id)
+        {
+            std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
+            auto it = directories_.find(id);
+            if (it != directories_.end()) {
+                nng_http_server_del_handler(server_, it->second);
+                directories_.erase(it);
+            }
         }
 
         std::unique_ptr<RouteToken> addRoute(Method method,
                                              const std::string& uri,
                                              RouteHandler handler) override
         {
-            std::lock_guard<std::mutex> lock(handler_mutex_);
+            std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
             auto m_str    = method_str[int(method)];
             auto route_it = routes_.find(m_str);
             if (route_it == routes_.end()) {
@@ -365,6 +340,29 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             handler_map.second.insert(std::make_pair(id, r));
             return std::unique_ptr<RouteToken>(new RouteTokenImpl(
                 [pThis, m_str, id] { pThis->removeRoute(m_str, id); }));
+        }
+
+        std::unique_ptr<RouteToken> addDirectory(
+            const std::string& uri,
+            const std::string& path) override
+        {
+            std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
+            nng_http_handler* handler;
+            int rv = nng_http_handler_alloc_directory(
+                &handler, uri.c_str(), path.c_str());
+            if (rv != 0) {
+                fatal("nng_http_handler_alloc", rv);
+            }
+            if ((rv = nng_http_server_add_handler(server_, handler)) != 0) {
+                fatal("nng_http_handler_add_handler", rv);
+            }
+
+            auto id =
+                directories_.empty() ? 1 : directories_.rbegin()->first + 1;
+            auto pThis       = shared_from_this();
+            directories_[id] = handler;
+            return std::unique_ptr<RouteToken>(new RouteTokenImpl(
+                [pThis, id] { pThis->removeDirectory(id); }));
         }
 
         void addCertificate(const std::string& cert,
@@ -439,6 +437,11 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                     nng_http_res_set_status(res, NNG_HTTP_STATUS_NOT_FOUND);
                     nng_http_res_set_reason(res, NULL);
                 }
+            } catch (siesta::Exception& e) {
+                nng_http_res_set_status(res, static_cast<uint16_t>(e.status()));
+                if (!e.has_reason()) {
+                    nng_http_res_set_reason(res, e.what());
+                }
             } catch (std::exception& e) {
                 nng_http_res_set_status(res,
                                         NNG_HTTP_STATUS_INTERNAL_SERVER_ERROR);
@@ -455,7 +458,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
         bool handle_rest_request(nng_http_req* request, nng_http_res* response)
         {
             const char* method = nng_http_req_get_method(request);
-            unlockable_lock_guard<std::mutex> lock(handler_mutex_);
+            std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
             auto route_it = routes_.find(method);
             if (route_it != routes_.end()) {
                 RequestImpl req(request);
@@ -495,31 +498,13 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                         req.body_.assign((const char*)data, sz);
                     }
                     ResponseImpl resp(response);
-                    auto h = entry.second.handler;
-                    lock.unlock();
-                    h(req, resp);
-                    if (!resp.body_.empty()) {
-                        int rv = nng_http_res_copy_data(
-                            response, resp.body_.data(), resp.body_.length());
-                        if (rv != 0) {
-                            throw std::runtime_error(
-                                "Failed to copy data to response");
-                        }
-                    }
-                    if (resp.status_ != siesta::HttpStatus::OK) {
-                        nng_http_res_set_status(response,
-                                                uint16_t(resp.status_));
-                        if (!resp.reason_.empty()) {
-                            nng_http_res_set_reason(response,
-                                                    resp.reason_.c_str());
-                        }
-                    }
+                    (entry.second.handler)(req, resp);
                     return true;
                 }
             }
             return false;
         }
-    };
+    };  // namespace
 }  // namespace
 
 void siesta::server::RouteHolder::operator+=(std::unique_ptr<RouteToken> route)

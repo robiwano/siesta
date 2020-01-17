@@ -72,4 +72,21 @@ namespace siesta
         NOT_EXTENDED             = 510,
         NETWORK_AUTH_REQUIRED    = 511,
     };
+
+    class Exception : public std::exception
+    {
+        HttpStatus status_;
+        std::string reason_;
+
+    public:
+        Exception(HttpStatus status, const std::string& reason = "")
+            : status_(status), reason_(reason)
+        {
+        }
+
+        HttpStatus status() const { return status_; }
+        bool has_reason() const { return !reason_.empty(); }
+        const char* what() const noexcept override { return reason_.c_str(); }
+    };
+
 }  // namespace siesta

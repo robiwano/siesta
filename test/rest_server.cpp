@@ -50,7 +50,7 @@ TEST(siesta, server_not_found)
     try {
         auto result = f.get();
         EXPECT_TRUE(false) << "Should not come here!";
-    } catch (siesta::client::ClientException& e) {
+    } catch (siesta::Exception& e) {
         EXPECT_EQ(e.status(), siesta::HttpStatus::NOT_FOUND);
     } catch (...) {
         EXPECT_TRUE(false) << "Unknown exception caught!";

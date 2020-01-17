@@ -26,10 +26,21 @@ if (SIESTA_NUM_TASKS)
 endif()
 
 if (SIESTA_BUILD_TESTS)
-    add_subdirectory(googletest)
+    include(fetcher.cmake)
+    fetch_repo(
+      googletest
+      "https://github.com/google/googletest.git"
+      release-1.10.0
+    )
     set_target_properties(
-        gtest gtest_main
-        PROPERTIES
-        FOLDER "Third-Party/googletest"
+        gmock gmock_main gtest gtest_main
+        PROPERTIES 
+        FOLDER "Test/common"
+    )
+
+    fetch_repo(
+      ghcfilesystem
+      "https://github.com/gulrak/filesystem.git"
+      v1.2.10
     )
 endif()

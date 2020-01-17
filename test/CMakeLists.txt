@@ -2,7 +2,9 @@ set(
     TEST_SRC
     rest_server
     http_client
+    serve_directory
 )
+
 if (SIESTA_ENABLE_TLS)
     set(
         TEST_SRC
@@ -20,7 +22,7 @@ foreach(T ${TEST_SRC})
     endif()
 
     target_include_directories(${TEST_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-    target_link_libraries(${TEST_NAME} siesta gtest_main)
+    target_link_libraries(${TEST_NAME} siesta gtest_main ghc_filesystem)
     set_target_properties(${TEST_NAME}
         PROPERTIES
         FOLDER "Tests"

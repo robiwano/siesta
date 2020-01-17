@@ -144,7 +144,7 @@ namespace
 
             std::string r;
             if (nng_http_res_get_status(res) != NNG_HTTP_STATUS_OK) {
-                throw ClientException(
+                throw siesta::Exception(
                     static_cast<HttpStatus>(nng_http_res_get_status(res)),
                     nng_http_res_get_reason(res));
             } else {
@@ -186,23 +186,6 @@ namespace
         return f;
     }
 }  // namespace
-
-siesta::client::ClientException::ClientException(HttpStatus status,
-                                                 const std::string& reason)
-    : status_(status)
-    , what_("Status " + std::to_string(int(status)) + ": " + reason)
-{
-}
-
-siesta::HttpStatus siesta::client::ClientException::status() const
-{
-    return status_;
-}
-
-const char* siesta::client::ClientException::what() const noexcept
-{
-    return what_.c_str();
-}
 
 siesta::client::Response siesta::client::getRequest(const std::string& address,
                                                     const int timeout_ms)

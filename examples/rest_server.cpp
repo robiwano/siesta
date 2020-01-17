@@ -58,9 +58,8 @@ int main(int argc, char** argv)
                 auto name = req.getUriParameters().at("name");
                 auto it   = resource.find(name);
                 if (it != resource.end()) {
-                    res.setHttpStatus(HttpStatus::CONFLICT,
-                                      "Element '" + name + "' already exists");
-                    return;
+                    throw Exception(HttpStatus::CONFLICT,
+                                    "Element '" + name + "' already exists");
                 }
                 resource[name] = req.getBody();
             });
@@ -72,8 +71,7 @@ int main(int argc, char** argv)
                 auto name = req.getUriParameters().at("name");
                 auto it   = resource.find(name);
                 if (it == resource.end()) {
-                    res.setHttpStatus(HttpStatus::NOT_FOUND);
-                    return;
+                    throw Exception(HttpStatus::NOT_FOUND);
                 }
                 res.setBody(it->second);
             });
@@ -85,8 +83,7 @@ int main(int argc, char** argv)
                 auto name = req.getUriParameters().at("name");
                 auto it   = resource.find(name);
                 if (it == resource.end()) {
-                    res.setHttpStatus(HttpStatus::NOT_FOUND);
-                    return;
+                    throw Exception(HttpStatus::NOT_FOUND);
                 }
                 it->second = req.getBody();
             });
@@ -98,8 +95,7 @@ int main(int argc, char** argv)
                 auto name = req.getUriParameters().at("name");
                 auto it   = resource.find(name);
                 if (it == resource.end()) {
-                    res.setHttpStatus(HttpStatus::NOT_FOUND);
-                    return;
+                    throw Exception(HttpStatus::NOT_FOUND);
                 }
                 resource.erase(it);
             });
