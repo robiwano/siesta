@@ -276,6 +276,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             auto it = directories_.find(id);
             if (it != directories_.end()) {
                 nng_http_server_del_handler(server_, it->second);
+                nng_http_handler_free(it->second);
                 directories_.erase(it);
             }
         }
@@ -288,8 +289,16 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             auto m_str    = method_str[int(method)];
             auto route_it = routes_.find(m_str);
             if (route_it == routes_.end()) {
+                auto base_uri = uri;
+                auto p        = base_uri.find_first_of(".:");
+                if (p != std::string::npos) {
+                    if (p > 1 && base_uri[p - 1] == '/')
+                        --p;
+                    base_uri = base_uri.substr(0, p);
+                }
                 nng_http_handler* handler;
-                int rv = nng_http_handler_alloc(&handler, NULL, rest_handle);
+                int rv = nng_http_handler_alloc(
+                    &handler, base_uri.c_str(), rest_handle);
                 if (rv != 0) {
                     fatal("nng_http_handler_alloc", rv);
                 }
@@ -436,6 +445,9 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                 if (!pThis->handle_rest_request(req, res)) {
                     nng_http_res_set_status(res, NNG_HTTP_STATUS_NOT_FOUND);
                     nng_http_res_set_reason(res, NULL);
+                } else {
+                    nng_http_res_add_header(
+                        res, "Access-Control-Allow-Origin", "*");
                 }
             } catch (siesta::Exception& e) {
                 nng_http_res_set_status(res, static_cast<uint16_t>(e.status()));

@@ -56,3 +56,81 @@ TEST(siesta, server_not_found)
         EXPECT_TRUE(false) << "Unknown exception caught!";
     }
 }
+
+TEST(siesta, server_queries)
+{
+    std::shared_ptr<server::Server> server;
+    EXPECT_NO_THROW(server = server::createServer("http://127.0.0.1:8080"));
+    EXPECT_NO_THROW(server->start());
+
+    server::RouteHolder routeHolder;
+    EXPECT_NO_THROW(routeHolder += server->addRoute(
+                        siesta::Method::POST,
+                        "/my/test/path",
+                        [](const server::Request& req, server::Response& resp) {
+                            //
+                            std::stringstream ss;
+                            ss << req.getQueries().at("foo") << std::endl;
+                            ss << req.getQueries().at("bar") << std::endl;
+                            resp.setBody(ss.str());
+                        }));
+
+    std::string req_body("{33F949DE-ED30-450C-B903-670EFF210D08}");
+    auto f = client::postRequest(
+        "http://127.0.0.1:8080/my/test/path?foo=23&bar=42", req_body, "", 5000);
+
+    try {
+        auto result = f.get();
+        std::istringstream iss(result);
+        char buf[128];
+        int expected[] = {23, 42};
+        for (int i = 0; iss.getline(buf, sizeof(buf)); ++i) {
+            int value;
+            int n = sscanf(buf, "%d", &value);
+            EXPECT_EQ(n, 1);
+            EXPECT_EQ(value, expected[i]);
+        }
+    } catch (std::exception& e) {
+        EXPECT_TRUE(false) << e.what();
+    }
+}
+
+TEST(siesta, server_uri_parameters)
+{
+    std::shared_ptr<server::Server> server;
+    EXPECT_NO_THROW(server = server::createServer("http://127.0.0.1:8080"));
+    EXPECT_NO_THROW(server->start());
+
+    server::RouteHolder routeHolder;
+    EXPECT_NO_THROW(routeHolder += server->addRoute(
+                        siesta::Method::POST,
+                        "/my/:test/:path",
+                        [](const server::Request& req, server::Response& resp) {
+                            //
+                            std::stringstream ss;
+                            ss << req.getUriParameters().at("test")
+                               << std::endl;
+                            ss << req.getUriParameters().at("path")
+                               << std::endl;
+                            resp.setBody(ss.str());
+                        }));
+
+    std::string req_body("{33F949DE-ED30-450C-B903-670EFF210D08}");
+    auto f = client::postRequest(
+        "http://127.0.0.1:8080/my/23/42", req_body, "", 5000);
+
+    try {
+        auto result = f.get();
+        std::istringstream iss(result);
+        char buf[128];
+        int expected[] = {23, 42};
+        for (int i = 0; iss.getline(buf, sizeof(buf)); ++i) {
+            int value;
+            int n = sscanf(buf, "%d", &value);
+            EXPECT_EQ(n, 1);
+            EXPECT_EQ(value, expected[i]);
+        }
+    } catch (std::exception& e) {
+        EXPECT_TRUE(false) << e.what();
+    }
+}

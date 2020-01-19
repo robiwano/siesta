@@ -26,13 +26,6 @@ int main(int argc, char** argv)
 
         server::RouteHolder h;
         h += server->addRoute(
-            Method::GET,
-            "/",
-            [](const server::Request& req, server::Response& res) {
-                res.setBody("Hello, World!");
-            });
-
-        h += server->addRoute(
             Method::POST,
             "/shutdown",
             [&](const server::Request&, server::Response& res) {
@@ -127,6 +120,7 @@ int main(int argc, char** argv)
         std::cout << "Server stopped!" << std::endl;
     } catch (std::exception& e) {
         std::cerr << e.what() << std::endl;
+        return -1;
     }
 
     return 0;
