@@ -220,10 +220,15 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             RouteHandler handler;
         };
 
+        struct directory {
+            nng_http_handler* handler;
+            std::map<std::string, std::string> additional_headers;
+        };
+
         std::map<std::string,
                  std::pair<nng_http_handler*, std::map<int, route>>>
             routes_;
-        std::map<int, nng_http_handler*> directories_;
+        std::map<int, directory> directories_;
 
     public:
         ServerImpl(const std::string& address)
@@ -275,8 +280,8 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
             auto it = directories_.find(id);
             if (it != directories_.end()) {
-                nng_http_server_del_handler(server_, it->second);
-                nng_http_handler_free(it->second);
+                nng_http_server_del_handler(server_, it->second.handler);
+                nng_http_handler_free(it->second.handler);
                 directories_.erase(it);
             }
         }
@@ -356,20 +361,21 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             const std::string& path) override
         {
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
-            nng_http_handler* handler;
+            directory dir;
             int rv = nng_http_handler_alloc_directory(
-                &handler, uri.c_str(), path.c_str());
+                &dir.handler, uri.c_str(), path.c_str());
             if (rv != 0) {
                 fatal("nng_http_handler_alloc", rv);
             }
-            if ((rv = nng_http_server_add_handler(server_, handler)) != 0) {
+            if ((rv = nng_http_server_add_handler(server_, dir.handler)) != 0) {
                 fatal("nng_http_handler_add_handler", rv);
             }
 
             auto id =
                 directories_.empty() ? 1 : directories_.rbegin()->first + 1;
             auto pThis       = shared_from_this();
-            directories_[id] = handler;
+            directories_[id] = dir;
+
             return std::unique_ptr<RouteToken>(new RouteTokenImpl(
                 [pThis, id] { pThis->removeDirectory(id); }));
         }
@@ -445,9 +451,6 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                 if (!pThis->handle_rest_request(req, res)) {
                     nng_http_res_set_status(res, NNG_HTTP_STATUS_NOT_FOUND);
                     nng_http_res_set_reason(res, NULL);
-                } else {
-                    nng_http_res_add_header(
-                        res, "Access-Control-Allow-Origin", "*");
                 }
             } catch (siesta::Exception& e) {
                 nng_http_res_set_status(res, static_cast<uint16_t>(e.status()));

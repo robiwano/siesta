@@ -13,23 +13,15 @@ namespace
 {
     constexpr auto html =
         R"~(<script type="text/javascript" language="javascript">
-
 function send()
 {
-    var URL = "http://" + location.host + ":8080/rest/test";  //Your URL
+    var URL = "http://" + location.host + "/rest/test";  //Your URL
 
     var xmlhttp = new XMLHttpRequest();
-    xmlhttp.onreadystatechange = callbackFunction(xmlhttp);
     xmlhttp.open("GET", URL, false);
     xmlhttp.setRequestHeader("Content-Type", "text/plain");
-    xmlhttp.onreadystatechange = callbackFunction(xmlhttp);
     xmlhttp.send("");
     document.getElementById("div").innerHTML = xmlhttp.statusText + ":" + xmlhttp.status + "<BR><textarea rows='2' cols='5'>" + xmlhttp.responseText + "</textarea>";
-}
-
-function callbackFunction(xmlhttp) 
-{
-    //alert(xmlhttp.responseXML);
 }
 </script>
 
@@ -86,13 +78,8 @@ int main(int argc, char** argv)
         server::RouteHolder h;
         h += server->addDirectory("/", file.directory());
 
-        auto rest_server = server::createServer("http://127.0.0.1:8080");
-        rest_server->start();
-        std::cout << "REST Server started, listening on port "
-                  << rest_server->port() << std::endl;
-
         int counter = 1;
-        h += rest_server->addRoute(
+        h += server->addRoute(
             Method::GET,
             "/rest/test",
             [&counter](const server::Request& req, server::Response& resp) {
