@@ -367,10 +367,12 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             if (rv != 0) {
                 fatal("nng_http_handler_alloc", rv);
             }
+            if ((rv = nng_http_handler_set_tree(dir.handler)) != 0) {
+                fatal("nng_http_handler_set_tree", rv);
+            }
             if ((rv = nng_http_server_add_handler(server_, dir.handler)) != 0) {
                 fatal("nng_http_handler_add_handler", rv);
             }
-
             auto id =
                 directories_.empty() ? 1 : directories_.rbegin()->first + 1;
             auto pThis       = shared_from_this();
