@@ -7,7 +7,7 @@ namespace siesta
         PUT,
         GET,
         PATCH,
-        DELETE,
+        DEL,
         Method_COUNT_DO_NOT_USE,
     };
 

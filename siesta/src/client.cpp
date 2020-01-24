@@ -212,7 +212,7 @@ Response siesta::client::postRequest(const std::string& address,
 Response siesta::client::deleteRequest(const std::string& address,
                                        const int timeout_ms)
 {
-    return doRequest(Method::DELETE, address, "", "", timeout_ms);
+    return doRequest(Method::DEL, address, "", "", timeout_ms);
 }
 
 Response siesta::client::patchRequest(const std::string& address,

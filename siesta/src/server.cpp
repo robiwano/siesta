@@ -225,8 +225,9 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             std::map<std::string, std::string> additional_headers;
         };
 
-        std::map<std::string,
-                 std::pair<nng_http_handler*, std::map<int, route>>>
+        std::map<std::string,           // Method
+                 std::map<std::string,  // Base URI
+                          std::pair<nng_http_handler*, std::map<int, route>>>>
             routes_;
         std::map<int, directory> directories_;
 
@@ -268,10 +269,11 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             }
         }
 
-        void removeRoute(const char* method, int id)
+        void removeRoute(const char* method, const char* base_uri, int id)
         {
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
-            auto& handler_map = routes_[method];
+            auto& method_map  = routes_[method];
+            auto& handler_map = method_map[base_uri];
             handler_map.second.erase(id);
         }
 
@@ -291,23 +293,25 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                                              RouteHandler handler) override
         {
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
-            auto m_str    = method_str[int(method)];
-            auto route_it = routes_.find(m_str);
-            if (route_it == routes_.end()) {
-                auto base_uri = uri;
-                auto p        = base_uri.find_first_of(".:");
-                if (p != std::string::npos) {
-                    if (p > 1 && base_uri[p - 1] == '/')
-                        --p;
-                    base_uri = base_uri.substr(0, p);
-                }
+            auto m_str       = method_str[int(method)];
+            auto& method_map = routes_[m_str];
+            auto base_uri    = uri;
+            auto p           = base_uri.find_first_of(".:");
+            if (p != std::string::npos) {
+                if (p > 1 && base_uri[p - 1] == '/')
+                    --p;
+                base_uri = base_uri.substr(0, p);
+            }
+            auto uri_it = method_map.find(base_uri);
+            if (uri_it == method_map.end()) {
                 nng_http_handler* handler;
                 int rv = nng_http_handler_alloc(
                     &handler, base_uri.c_str(), rest_handle);
                 if (rv != 0) {
                     fatal("nng_http_handler_alloc", rv);
                 }
-                if ((rv = nng_http_handler_set_tree(handler)) != 0) {
+                if ((p != std::string::npos) &&
+                    (rv = nng_http_handler_set_tree(handler)) != 0) {
                     fatal("nng_http_handler_set_tree", rv);
                 }
                 if ((rv = nng_http_handler_set_data(handler, this, NULL)) !=
@@ -329,11 +333,12 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                 if ((rv = nng_http_server_add_handler(server_, handler)) != 0) {
                     fatal("nng_http_handler_add_handler", rv);
                 }
-                routes_[m_str].first = handler;
-                route_it             = routes_.find(m_str);
+
+                method_map[base_uri].first = handler;
+                uri_it                     = method_map.find(base_uri);
             }
 
-            auto& handler_map = route_it->second;
+            auto& handler_map = uri_it->second;
             auto id           = handler_map.second.empty()
                           ? 1
                           : handler_map.second.rbegin()->first + 1;
@@ -352,8 +357,10 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             r.reg_exp = std::move(re);
             r.handler = handler;
             handler_map.second.insert(std::make_pair(id, r));
-            return std::unique_ptr<RouteToken>(new RouteTokenImpl(
-                [pThis, m_str, id] { pThis->removeRoute(m_str, id); }));
+            return std::unique_ptr<RouteToken>(
+                new RouteTokenImpl([pThis, m_str, base_uri, id] {
+                    pThis->removeRoute(m_str, base_uri.c_str(), id);
+                }));
         }
 
         std::unique_ptr<RouteToken> addDirectory(
@@ -476,8 +483,8 @@ zFX5yAtcD5BnoPBo0CE5y/I=
         {
             const char* method = nng_http_req_get_method(request);
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
-            auto route_it = routes_.find(method);
-            if (route_it != routes_.end()) {
+            auto method_it = routes_.find(method);
+            if (method_it != routes_.end()) {
                 RequestImpl req(request);
                 std::string uri(nng_http_req_get_uri(request));
                 auto q_pos = uri.find('?');
@@ -493,7 +500,12 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                     }
                     uri = uri.substr(0, q_pos);
                 }
-                auto& handler_map = route_it->second;
+                auto& uri_map = method_it->second;
+                auto uri_it   = uri_map.find(uri);
+                if (uri_it == uri_map.end()) {
+                    return false;
+                }
+                auto& handler_map = uri_it->second;
                 for (const auto& entry : handler_map.second) {
                     std::smatch m;
                     if (!std::regex_match(uri, m, entry.second.reg_exp)) {
