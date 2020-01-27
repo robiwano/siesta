@@ -482,7 +482,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
         bool handle_rest_request(nng_http_req* request, nng_http_res* response)
         {
             const char* method = nng_http_req_get_method(request);
-            std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
+            std::unique_lock<std::recursive_mutex> lock(handler_mutex_);
             auto method_it = routes_.find(method);
             if (method_it != routes_.end()) {
                 RequestImpl req(request);
@@ -526,6 +526,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                     if (data != nullptr) {
                         req.body_.assign((const char*)data, sz);
                     }
+                    lock.unlock();
                     ResponseImpl resp(response);
                     (entry.second.handler)(req, resp);
                     return true;
