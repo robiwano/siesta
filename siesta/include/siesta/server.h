@@ -59,12 +59,12 @@ namespace siesta
             virtual ~Server() = default;
 
             // Hold on to returned token to keep route "alive"
-            [[nodiscard]] virtual std::unique_ptr<RouteToken> addRoute(
+            NO_DISCARD virtual std::unique_ptr<RouteToken> addRoute(
                 Method method,
                 const std::string& uri,
                 RouteHandler handler) = 0;
 
-            [[nodiscard]] virtual std::unique_ptr<RouteToken> addDirectory(
+            NO_DISCARD virtual std::unique_ptr<RouteToken> addDirectory(
                 const std::string& uri,
                 const std::string& path) = 0;
 
