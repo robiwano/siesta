@@ -351,7 +351,8 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             std::smatch m;
             while (std::regex_search(uri_re, m, re_param)) {
                 r.uri_param_key.push_back(m[1].str());
-                uri_re.replace(m[0].first, m[0].second, "([^/]+)");
+                uri_re.replace(
+                    m[0].first - uri_re.begin(), m[0].length(), "([^/]+)");
             }
             std::regex re(uri_re);
             r.reg_exp = std::move(re);
