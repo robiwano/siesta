@@ -7,9 +7,14 @@
 #include <nng/transport/tls/tls.h>
 #include <siesta/server.h>
 
+#include <future>
+#include <iostream>
 #include <mutex>
 #include <regex>
+#include <sstream>
 #include <stdexcept>
+
+#include <assert.h>
 
 #ifdef WIN32
 #include <winsock.h>
@@ -19,6 +24,7 @@
 
 using namespace siesta;
 using namespace siesta::server;
+using siesta::nng_smart_ptr;
 
 namespace
 {
@@ -104,19 +110,19 @@ zFX5yAtcD5BnoPBo0CE5y/I=
         "PATCH",
         "DELETE",
     };
-    static auto method_str_cnt = int(Method::Method_COUNT_DO_NOT_USE);
+    constexpr auto method_str_cnt = int(HttpMethod::Method_COUNT_DO_NOT_USE);
+    static_assert((sizeof(method_str) / sizeof(method_str[0])) ==
+                      method_str_cnt,
+                  "Length mismatch");
 
     static void fatal(const char* what, int rv)
     {
-        char buffer[256];
-        snprintf(buffer, sizeof(buffer), "%s: %s", what, nng_strerror(rv));
-        throw std::runtime_error(buffer);
+        std::stringstream ss;
+        ss << what << ": " << rv;
+        throw std::runtime_error(ss.str());
     }
 
-    template <typename Type>
-    using Deleter = std::unique_ptr<Type, void (*)(Type*)>;
-
-    class RequestImpl : public Request
+    class RequestImpl : public rest::Request
     {
         nng_http_req* req_;
         const std::string my_uri_;
@@ -129,12 +135,12 @@ zFX5yAtcD5BnoPBo0CE5y/I=
 
         const std::string& getUri() const override { return my_uri_; }
 
-        const Method getMethod() const override
+        const HttpMethod getMethod() const override
         {
             auto m = nng_http_req_get_method(req_);
             for (int i = 0; i < method_str_cnt; ++i) {
                 if (strcmp(m, method_str[i]) == 0) {
-                    return static_cast<Method>(i);
+                    return static_cast<HttpMethod>(i);
                 }
             }
             throw std::runtime_error("non recognized method: " +
@@ -169,7 +175,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
         std::string body_;
     };  // namespace
 
-    class ResponseImpl : public Response
+    class ResponseImpl : public rest::Response
     {
         nng_http_res* res_;
 
@@ -199,49 +205,285 @@ zFX5yAtcD5BnoPBo0CE5y/I=
         }
     };
 
-    struct RouteTokenImpl : public RouteToken {
+    struct RouteTokenImpl : public Token {
         using fn_type = std::function<void(void)>;
         fn_type fn_;
         RouteTokenImpl(fn_type fn) : fn_(fn) {}
         ~RouteTokenImpl() { fn_(); }
     };
 
+    struct StreamInternalImpl : websocket::Writer {
+        nng_aio* aio_read_;
+        nng_aio* aio_write_;
+        nng_stream* s_;
+        std::unique_ptr<websocket::Reader> client_;
+        std::vector<uint8_t> rec_buffer;
+
+        using Disposer = std::function<void(StreamInternalImpl*)>;
+        Disposer disposer_;
+        StreamInternalImpl(websocket::Factory factory,
+                           nng_stream* s,
+                           Disposer fn_dispose)
+            : aio_read_(nullptr)
+            , rec_buffer(32768)
+            , s_(s)
+            , disposer_(fn_dispose)
+        {
+            int rv;
+            if ((rv = nng_aio_alloc(
+                     &aio_read_,
+                     [](void* arg) {
+                         StreamInternalImpl* pThis = (StreamInternalImpl*)arg;
+                         pThis->stream_recv_cb();
+                     },
+                     this)) != 0) {
+                fatal("nng_aio_alloc read", rv);
+            }
+            if ((rv = nng_aio_alloc(&aio_write_, nullptr, nullptr)) != 0) {
+                fatal("nng_aio_alloc write", rv);
+            }
+            client_.reset(factory(*this));
+            startReceive();
+        }
+
+        ~StreamInternalImpl()
+        {
+            cancel();
+            nng_stream_free(s_);
+            nng_aio_free(aio_read_);
+            nng_aio_free(aio_write_);
+        }
+
+        void startReceive()
+        {
+            nng_iov iov = {rec_buffer.data(), rec_buffer.size()};
+            nng_aio_set_iov(aio_read_, 1, &iov);
+            nng_stream_recv(s_, aio_read_);
+        }
+
+        void cancel()
+        {
+            nng_aio_cancel(aio_read_);
+            nng_aio_wait(aio_read_);
+            nng_aio_cancel(aio_write_);
+            nng_aio_wait(aio_write_);
+        }
+
+        void stream_recv_cb()
+        {
+            int rv   = nng_aio_result(aio_read_);
+            auto len = nng_aio_count(aio_read_);
+            switch (rv) {
+            case 0: {
+                std::string data((char*)rec_buffer.data(), len);
+                startReceive();
+                try {
+                    client_->onReadData(data);
+                } catch (...) {
+                    // TODO
+                }
+            } break;
+            case NNG_ECLOSED: {
+                disposer_(this);
+            } break;
+            default:
+                break;
+            }
+        }
+
+        void writeData(const std::string& data) override
+        {
+            nng_iov iov;
+            iov.iov_buf = (void*)data.data();
+            iov.iov_len = data.size();
+            int rv      = nng_aio_set_iov(aio_write_, 1, &iov);
+            if (rv != 0) {
+                fatal("nng_aio_set_iov", rv);
+            }
+            nng_stream_send(s_, aio_write_);
+            nng_aio_wait(aio_write_);
+            rv = nng_aio_result(aio_write_);
+            if (rv != 0) {
+                fatal("nng_aio_result", rv);
+            }
+        }
+    };
+
     class ServerImpl : public Server,
                        public std::enable_shared_from_this<ServerImpl>
     {
         std::recursive_mutex handler_mutex_;
-        nng_http_server* server_{nullptr};
-        nng_tls_config* tls_cfg_{nullptr};
+        nng_smart_ptr<nng_http_server> server_{nng_http_server_release};
+        nng_smart_ptr<nng_tls_config> tls_cfg_{nng_tls_config_free};
         bool started_{false};
 
         struct route {
             std::regex reg_exp;
             std::vector<std::string> uri_param_key;
-            RouteHandler handler;
+            rest::Handler handler;
         };
 
         struct directory {
-            nng_http_handler* handler;
+            nng_http_server* server_;
+            nng_smart_ptr<nng_http_handler> handler{nng_http_handler_free};
+            directory(nng_http_server* server,
+                      const std::string& uri,
+                      const std::string& path)
+                : server_(server)
+            {
+                int rv;
+                if ((rv = nng_http_handler_alloc_directory(
+                         &handler, uri.c_str(), path.c_str())) != 0) {
+                    fatal("nng_http_handler_alloc", rv);
+                }
+                if ((rv = nng_http_handler_set_tree(handler)) != 0) {
+                    fatal("nng_http_handler_set_tree", rv);
+                }
+                if ((rv = nng_http_server_add_handler(server_, handler)) != 0) {
+                    fatal("nng_http_handler_add_handler", rv);
+                }
+            }
+            ~directory() { nng_http_server_del_handler(server_, handler); }
             std::map<std::string, std::string> additional_headers;
+        };
+
+        struct web_socket {
+            nng_stream_listener* listener{nullptr};
+            nng_smart_ptr<nng_aio> aio_accept{nng_aio_free};
+            websocket::Factory factory;
+            std::map<int, std::unique_ptr<StreamInternalImpl>> streams;
+
+            std::recursive_mutex& mtx;
+            std::future<void> dispose_job;
+
+            const nng_url* base_url_;
+            std::string path_;
+            const size_t max_num_connections_;
+
+            web_socket(const nng_url* base_url,
+                       const std::string& path,
+                       websocket::Factory f,
+                       std::recursive_mutex& m,
+                       const size_t max_num_connections)
+                : base_url_(base_url)
+                , path_(path)
+                , factory(f)
+                , mtx(m)
+                , max_num_connections_(max_num_connections)
+            {
+                int rv;
+                if ((rv = nng_aio_alloc(
+                         &aio_accept,
+                         [](void* arg) { ((web_socket*)arg)->accept_cb(); },
+                         this)) != 0) {
+                    fatal("nng_aio_alloc", rv);
+                }
+
+                startListening();
+            }
+
+            ~web_socket()
+            {
+                {
+                    std::lock_guard<std::recursive_mutex> lock(mtx);
+                    streams.clear();
+                }
+                nng_aio_cancel(aio_accept);
+                stopListening();
+            }
+
+            void startListening()
+            {
+                nng_url url       = *base_url_;
+                const bool secure = (strcmp(base_url_->u_scheme, "https") == 0);
+                url.u_path        = (char*)path_.c_str();
+                url.u_scheme      = secure ? "wss" : "ws";
+                int rv = nng_stream_listener_alloc_url(&listener, &url);
+                if (rv != 0) {
+                    fatal("nng_stream_listener_alloc_url", rv);
+                }
+                nng_stream_listener_set_bool(
+                    listener, NNG_OPT_TCP_NODELAY, true);
+                nng_stream_listener_set_bool(
+                    listener, NNG_OPT_TCP_KEEPALIVE, true);
+                nng_stream_listener_set_size(
+                    listener, NNG_OPT_WS_SENDMAXFRAME, 1'000'000);
+
+                if ((rv = nng_stream_listener_listen(listener)) != 0) {
+                    fatal("nng_stream_listener_alloc_url", rv);
+                }
+
+                startAccept();
+            }
+
+            void stopListening()
+            {
+                if (listener != nullptr) {
+                    nng_stream_listener_close(listener);
+                    nng_stream_listener_free(listener);
+                    listener = nullptr;
+                }
+            }
+
+            void startAccept()
+            {
+                nng_stream_listener_accept(listener, aio_accept);
+            }
+
+            void accept_cb()
+            {
+                int rv = nng_aio_result(aio_accept);
+                if (rv != 0) {
+                    return;
+                }
+
+                nng_stream* stream =
+                    (nng_stream*)nng_aio_get_output(aio_accept, 0);
+
+                try {
+                    std::lock_guard<std::recursive_mutex> lock(mtx);
+                    if (max_num_connections_ > 0 &&
+                        (streams.size() + 1) >= max_num_connections_) {
+                        stopListening();
+                    } else {
+                        startAccept();
+                    }
+
+                    auto id = streams.empty() ? 1 : streams.rbegin()->first + 1;
+                    auto impl = std::make_unique<StreamInternalImpl>(
+                        factory, stream, [id, this](StreamInternalImpl*) {
+                            dispose_job = std::async(std::launch::async, [=] {
+                                std::lock_guard<std::recursive_mutex> lock(mtx);
+                                streams.erase(id);
+                                if (streams.size() < max_num_connections_) {
+                                    startListening();
+                                }
+                            });
+                        });
+                    streams.insert(std::make_pair(id, std::move(impl)));
+                } catch (std::exception&) {
+                }
+            }
         };
 
         std::map<std::string,           // Method
                  std::map<std::string,  // Base URI
                           std::pair<nng_http_handler*, std::map<int, route>>>>
             routes_;
-        std::map<int, directory> directories_;
+        std::map<int, std::unique_ptr<directory>> directories_;
+        std::map<int, std::unique_ptr<web_socket>> websockets_;
+
+        nng_smart_ptr<nng_url> url_{nng_url_free};
 
     public:
         ServerImpl(const std::string& address)
         {
-            nng_url* url;
             int rv;
-            if ((rv = nng_url_parse(&url, address.c_str())) != 0) {
+            if ((rv = nng_url_parse(&url_, address.c_str())) != 0) {
                 fatal("nng_url_parse", rv);
             }
-            Deleter<nng_url> free_url(url, nng_url_free);
 
-            const bool secure = (strcmp(url->u_scheme, "https") == 0);
+            const bool secure = (strcmp(url_->u_scheme, "https") == 0);
             if (secure) {
 #if !SIESTA_ENABLE_TLS
                 throw std::logic_error(
@@ -254,12 +496,17 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             }
             // Get a suitable HTTP(S) server instance.  This creates one
             // if it doesn't already exist.
-            if ((rv = nng_http_server_hold(&server_, url)) != 0) {
+            if ((rv = nng_http_server_hold(&server_, url_)) != 0) {
                 fatal("nng_http_server_hold", rv);
             }
         }
         ~ServerImpl()
         {
+            // If any of these assert, some RouteHolder object is still active
+            assert(routes_.empty());
+            assert(directories_.empty());
+            assert(websockets_.empty());
+
             if (server_ != nullptr) {
                 nng_http_server_stop(server_);
                 nng_http_server_release(server_);
@@ -275,6 +522,12 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             auto& method_map  = routes_[method];
             auto& handler_map = method_map[base_uri];
             handler_map.second.erase(id);
+            if (!handler_map.second.empty())
+                return;
+            method_map.erase(base_uri);
+            if (!method_map.empty())
+                return;
+            routes_.erase(method);
         }
 
         void removeDirectory(int id)
@@ -282,15 +535,22 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
             auto it = directories_.find(id);
             if (it != directories_.end()) {
-                nng_http_server_del_handler(server_, it->second.handler);
-                nng_http_handler_free(it->second.handler);
                 directories_.erase(it);
             }
         }
 
-        std::unique_ptr<RouteToken> addRoute(Method method,
-                                             const std::string& uri,
-                                             RouteHandler handler) override
+        void removeWebsocket(int id)
+        {
+            std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
+            auto it = websockets_.find(id);
+            if (it != websockets_.end()) {
+                websockets_.erase(it);
+            }
+        }
+
+        std::unique_ptr<Token> addRoute(HttpMethod method,
+                                        const std::string& uri,
+                                        rest::Handler handler) override
         {
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
             auto m_str       = method_str[int(method)];
@@ -358,36 +618,39 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             r.reg_exp = std::move(re);
             r.handler = handler;
             handler_map.second.insert(std::make_pair(id, r));
-            return std::unique_ptr<RouteToken>(
+            return std::unique_ptr<Token>(
                 new RouteTokenImpl([pThis, m_str, base_uri, id] {
                     pThis->removeRoute(m_str, base_uri.c_str(), id);
                 }));
         }
 
-        std::unique_ptr<RouteToken> addDirectory(
-            const std::string& uri,
-            const std::string& path) override
+        std::unique_ptr<Token> addDirectory(const std::string& uri,
+                                            const std::string& path) override
         {
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
-            directory dir;
-            int rv = nng_http_handler_alloc_directory(
-                &dir.handler, uri.c_str(), path.c_str());
-            if (rv != 0) {
-                fatal("nng_http_handler_alloc", rv);
-            }
-            if ((rv = nng_http_handler_set_tree(dir.handler)) != 0) {
-                fatal("nng_http_handler_set_tree", rv);
-            }
-            if ((rv = nng_http_server_add_handler(server_, dir.handler)) != 0) {
-                fatal("nng_http_handler_add_handler", rv);
-            }
+            auto dir = std::make_unique<directory>(server_, uri, path);
             auto id =
                 directories_.empty() ? 1 : directories_.rbegin()->first + 1;
             auto pThis       = shared_from_this();
-            directories_[id] = dir;
-
-            return std::unique_ptr<RouteToken>(new RouteTokenImpl(
+            directories_[id] = std::move(dir);
+            return std::unique_ptr<Token>(new RouteTokenImpl(
                 [pThis, id] { pThis->removeDirectory(id); }));
+        }
+
+        std::unique_ptr<Token> addWebsocket(
+            const std::string& uri,
+            websocket::Factory factory,
+            const size_t max_num_connections /*= 0 */)
+        {
+            std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
+            auto socket = std::make_unique<web_socket>(
+                url_, uri, factory, handler_mutex_, max_num_connections);
+            auto pThis = shared_from_this();
+            const auto id =
+                websockets_.empty() ? 1 : websockets_.rbegin()->first + 1;
+            websockets_.emplace(std::make_pair(id, std::move(socket)));
+            return std::unique_ptr<Token>(new RouteTokenImpl(
+                [pThis, id] { pThis->removeWebsocket(id); }));
         }
 
         void addCertificate(const std::string& cert,
@@ -443,6 +706,10 @@ zFX5yAtcD5BnoPBo0CE5y/I=
         }
 
     private:
+        static void ws_accept(void* arg)
+        {
+            nng_stream_listener* l = (nng_stream_listener*)arg;
+        }
         static void rest_handle(nng_aio* aio)
         {
             nng_http_req* req   = (nng_http_req*)nng_aio_get_input(aio, 0);
@@ -501,36 +768,40 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                     }
                     uri = uri.substr(0, q_pos);
                 }
-                auto& uri_map = method_it->second;
-                auto uri_it   = uri_map.find(uri);
-                if (uri_it == uri_map.end()) {
-                    return false;
-                }
-                auto& handler_map = uri_it->second;
-                for (const auto& entry : handler_map.second) {
-                    std::smatch m;
-                    if (!std::regex_match(uri, m, entry.second.reg_exp)) {
-                        continue;
-                    }
-                    if (m.size() > 1) {
-                        if (entry.second.uri_param_key.size() != m.size() - 1) {
-                            throw std::runtime_error("Uri parameter error");
+                for (auto& entry : method_it->second) {
+                    auto p = uri.find(entry.first);
+                    if (p != std::string::npos) {
+                        auto& handler_map = entry.second;
+                        for (const auto& entry : handler_map.second) {
+                            std::smatch m;
+                            if (!std::regex_match(
+                                    uri, m, entry.second.reg_exp)) {
+                                continue;
+                            }
+                            if (m.size() > 1) {
+                                if (entry.second.uri_param_key.size() !=
+                                    m.size() - 1) {
+                                    throw std::runtime_error(
+                                        "Uri parameter error");
+                                }
+                                for (size_t i = 1; i < m.size(); ++i) {
+                                    req.uri_parameters_.insert(std::make_pair(
+                                        entry.second.uri_param_key[i - 1],
+                                        m[i].str()));
+                                }
+                            }
+                            void* data = nullptr;
+                            size_t sz  = 0ULL;
+                            nng_http_req_get_data(request, &data, &sz);
+                            if (data != nullptr) {
+                                req.body_.assign((const char*)data, sz);
+                            }
+                            lock.unlock();
+                            ResponseImpl resp(response);
+                            (entry.second.handler)(req, resp);
+                            return true;
                         }
-                        for (size_t i = 1; i < m.size(); ++i) {
-                            req.uri_parameters_.insert(std::make_pair(
-                                entry.second.uri_param_key[i - 1], m[i].str()));
-                        }
                     }
-                    void* data = nullptr;
-                    size_t sz  = 0ULL;
-                    nng_http_req_get_data(request, &data, &sz);
-                    if (data != nullptr) {
-                        req.body_.assign((const char*)data, sz);
-                    }
-                    lock.unlock();
-                    ResponseImpl resp(response);
-                    (entry.second.handler)(req, resp);
-                    return true;
                 }
             }
             return false;
@@ -538,7 +809,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
     };  // namespace
 }  // namespace
 
-void siesta::server::RouteHolder::operator+=(std::unique_ptr<RouteToken> route)
+void siesta::server::TokenHolder::operator+=(std::unique_ptr<Token> route)
 {
     routes_.push_back(std::move(route));
 }
@@ -552,5 +823,6 @@ namespace siesta
         {
             return std::make_shared<ServerImpl>(address);
         }
+
     }  // namespace server
 }  // namespace siesta

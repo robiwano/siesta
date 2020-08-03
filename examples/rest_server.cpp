@@ -8,8 +8,67 @@
 
 using namespace siesta;
 
+#include <nng/nng.h>
+#include <nng/supplemental/util/platform.h>
+
+#define THROW_ON_ERROR(x)                               \
+    {                                                   \
+        auto rv = x;                                    \
+        if (rv != 0) {                                  \
+            throw std::runtime_error(nng_strerror(rv)); \
+        }                                               \
+    }
+
+struct WebsocketConnection : public server::websocket::Reader {
+    server::websocket::Writer& writer;
+    bool stop_thread{false};
+    std::thread thread;
+    WebsocketConnection(server::websocket::Writer& w) : writer(w)
+    {
+        std::cout << "Stream connected (" << this << ")" << std::endl;
+    }
+    ~WebsocketConnection()
+    {
+        stopThread();
+        std::cout << "Stream disconnected (" << this << ")" << std::endl;
+    }
+    void stopThread()
+    {
+        if (thread.joinable()) {
+            stop_thread = true;
+            thread.join();
+            stop_thread = false;
+        }
+    }
+    void onReadData(const std::string& data) override
+    {
+#if 1
+        writer.writeData(data);
+#else
+        stopThread();
+        std::thread t([this, data] {
+            using clock = std::chrono::high_resolution_clock;
+            auto t_next = clock::now();
+            while (!stop_thread) {
+                auto t_now = clock::now();
+                if (t_now >= t_next) {
+                    t_next = t_now + std::chrono::milliseconds(1000);
+                    writer.writeData(data);
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+        });
+        thread.swap(t);
+#endif
+    }
+};
+
+void set_signal_handler();
+static bool stop_server = false;
+
 int main(int argc, char** argv)
 {
+    set_signal_handler();
     try {
         std::string addr = "http://127.0.0.1:9080";
         if (argc > 1) {
@@ -20,23 +79,21 @@ int main(int argc, char** argv)
         std::cout << "Server started, listening on port " << server->port()
                   << std::endl;
 
-        bool stop_server = false;
-
         std::map<std::string, std::string> resource;
 
-        server::RouteHolder h;
+        server::TokenHolder h;
         h += server->addRoute(
-            Method::POST,
+            HttpMethod::POST,
             "/shutdown",
-            [&](const server::Request&, server::Response& res) {
+            [&](const server::rest::Request&, server::rest::Response& res) {
                 stop_server = true;
                 res.setBody("OK");
             });
 
         h += server->addRoute(
-            Method::GET,
+            HttpMethod::GET,
             "/api",
-            [&](const server::Request& req, server::Response& res) {
+            [&](const server::rest::Request& req, server::rest::Response& res) {
                 std::stringstream body;
                 for (auto it : resource) {
                     body << req.getUri() << "/" << it.first << std::endl;
@@ -45,9 +102,9 @@ int main(int argc, char** argv)
             });
 
         h += server->addRoute(
-            Method::POST,
+            HttpMethod::POST,
             "/api/:name",
-            [&](const server::Request& req, server::Response& res) {
+            [&](const server::rest::Request& req, server::rest::Response& res) {
                 auto name = req.getUriParameters().at("name");
                 auto it   = resource.find(name);
                 if (it != resource.end()) {
@@ -58,9 +115,9 @@ int main(int argc, char** argv)
             });
 
         h += server->addRoute(
-            Method::GET,
+            HttpMethod::GET,
             "/api/:name",
-            [&](const server::Request& req, server::Response& res) {
+            [&](const server::rest::Request& req, server::rest::Response& res) {
                 auto name = req.getUriParameters().at("name");
                 auto it   = resource.find(name);
                 if (it == resource.end()) {
@@ -70,9 +127,9 @@ int main(int argc, char** argv)
             });
 
         h += server->addRoute(
-            Method::PUT,
+            HttpMethod::PUT,
             "/api/:name",
-            [&](const server::Request& req, server::Response& res) {
+            [&](const server::rest::Request& req, server::rest::Response& res) {
                 auto name = req.getUriParameters().at("name");
                 auto it   = resource.find(name);
                 if (it == resource.end()) {
@@ -82,9 +139,9 @@ int main(int argc, char** argv)
             });
 
         h += server->addRoute(
-            Method::DELETE,
+            HttpMethod::DEL,
             "/api/:name",
-            [&](const server::Request& req, server::Response& res) {
+            [&](const server::rest::Request& req, server::rest::Response& res) {
                 auto name = req.getUriParameters().at("name");
                 auto it   = resource.find(name);
                 if (it == resource.end()) {
@@ -94,9 +151,9 @@ int main(int argc, char** argv)
             });
 
         h += server->addRoute(
-            Method::PATCH,
+            HttpMethod::PATCH,
             "/api/:name/:index",
-            [](const server::Request& req, server::Response& resp) {
+            [](const server::rest::Request& req, server::rest::Response& resp) {
                 //
                 const auto& params = req.getUriParameters();
                 std::stringstream retval;
@@ -114,8 +171,16 @@ int main(int argc, char** argv)
                 resp.setBody(retval.str());
             });
 
-        while (!stop_server)
+        h += server->addWebsocket(
+            "/test",
+            [](server::websocket::Writer& w) {
+                return new WebsocketConnection(w);
+            },
+            2);
+
+        while (!stop_server) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
 
         std::cout << "Server stopped!" << std::endl;
     } catch (std::exception& e) {
@@ -125,3 +190,40 @@ int main(int argc, char** argv)
 
     return 0;
 }
+
+#ifdef _WIN32
+
+#include <objbase.h>
+#include <windows.h>
+
+BOOL WINAPI HandlerRoutine(_In_ DWORD dwCtrlType)
+{
+    switch (dwCtrlType) {
+    case CTRL_C_EVENT:
+        stop_server = true;
+        return TRUE;
+    default:
+        // Pass signal on to the next handler
+        return FALSE;
+    }
+}
+
+void set_signal_handler() { SetConsoleCtrlHandler(HandlerRoutine, TRUE); }
+
+#else
+#include <signal.h>
+
+void intHandler(int signal)
+{
+    (void)signal;
+    stop_server = true;
+}
+
+void set_signal_handler()
+{
+    signal(SIGINT, intHandler);
+    signal(SIGSTOP, intHandler);
+    signal(SIGTERM, intHandler);
+}
+
+#endif

@@ -12,72 +12,157 @@ namespace siesta
 {
     namespace server
     {
-        class RouteToken
+        class Token
         {
         public:
-            virtual ~RouteToken() = default;
+            virtual ~Token() = default;
         };
 
-        class RouteHolder
+        class TokenHolder
         {
-            std::vector<std::unique_ptr<RouteToken>> routes_;
+            std::vector<std::unique_ptr<Token>> routes_;
 
         public:
-            void operator+=(std::unique_ptr<RouteToken> route);
+            void operator+=(std::unique_ptr<Token> route);
         };
 
-        class Request
+        namespace rest
         {
-        public:
-            virtual ~Request()                        = default;
-            virtual const std::string& getUri() const = 0;
-            virtual const Method getMethod() const    = 0;
-            virtual const std::map<std::string, std::string>& getUriParameters()
-                const = 0;
-            virtual const std::map<std::string, std::string>& getQueries()
-                const                                                   = 0;
-            virtual std::string getHeader(const std::string& key) const = 0;
-            virtual std::string getBody() const                         = 0;
-        };
+            class Request
+            {
+            public:
+                virtual ~Request()                         = default;
+                virtual const std::string& getUri() const  = 0;
+                virtual const HttpMethod getMethod() const = 0;
+                virtual const std::map<std::string, std::string>&
+                getUriParameters() const = 0;
+                virtual const std::map<std::string, std::string>& getQueries()
+                    const                                                   = 0;
+                virtual std::string getHeader(const std::string& key) const = 0;
+                virtual std::string getBody() const                         = 0;
+            };
 
-        class Response
+            class Response
+            {
+            public:
+                virtual ~Response()                              = default;
+                virtual void addHeader(const std::string& key,
+                                       const std::string& value) = 0;
+                // Set the body of the response
+                virtual void setBody(const void* data, size_t size) = 0;
+                virtual void setBody(const std::string& data)       = 0;
+            };
+
+            using Handler =
+                std::function<void(const rest::Request&, rest::Response&)>;
+        }  // namespace rest
+
+        namespace websocket
         {
-        public:
-            virtual ~Response()                              = default;
-            virtual void addHeader(const std::string& key,
-                                   const std::string& value) = 0;
-            // Set the body of the response
-            virtual void setBody(const void* data, size_t size) = 0;
-            virtual void setBody(const std::string& data)       = 0;
-        };
+            /**
+             * Reader interface, implemented by websocket handlers
+             */
+            class Reader
+            {
+            public:
+                virtual ~Reader()                                = default;
+                virtual void onReadData(const std::string& data) = 0;
+            };
 
-        using RouteHandler = std::function<void(const Request&, Response&)>;
+            /**
+             * Writer interface, passed to websocket factory
+             */
+            class Writer
+            {
+            public:
+                virtual ~Writer()                               = default;
+                virtual void writeData(const std::string& data) = 0;
+            };
+
+            /** Websocket handler factory type */
+            using Factory = std::function<Reader*(Writer&)>;
+        }  // namespace websocket
 
         class Server
         {
         public:
             virtual ~Server() = default;
 
-            // Hold on to returned token to keep route "alive"
-            NO_DISCARD virtual std::unique_ptr<RouteToken> addRoute(
-                Method method,
+            /**
+             * Adds a REST route.
+             *
+             * @param method    HTTP method (GET, PUT etc.)
+             * @param uri       Route URI
+             * @param handler   Handler for route
+             * @returns A token. Hold on to returned token to keep route
+             * "alive". When token goes out of scope, route is removed.
+             */
+            NO_DISCARD virtual std::unique_ptr<Token> addRoute(
+                HttpMethod method,
                 const std::string& uri,
-                RouteHandler handler) = 0;
+                rest::Handler handler) = 0;
 
-            NO_DISCARD virtual std::unique_ptr<RouteToken> addDirectory(
+            /**
+             * Adds serving of static folder.
+             *
+             * @param uri   Directory URI
+             * @param path  Filesystem path of directory to server.
+             * @returns A token. Hold on to returned token to keep directory
+             * "alive". When token goes out of scope, directory is removed.
+             */
+            NO_DISCARD virtual std::unique_ptr<Token> addDirectory(
                 const std::string& uri,
                 const std::string& path) = 0;
 
-            // Must be called before server is started
+            /**
+             * Adds websocket handler.
+             *
+             * @param uri                   Websocket URI
+             * @param factory               Factory for websocket handler.
+             * @param max_num_connections   Max # of concurrent sessions for
+             * websocket. Set to zero for no limit.
+             * @returns A token. Hold on to returned token to keep websocket
+             * "alive". When token goes out of scope, websocket is removed.
+             */
+            NO_DISCARD virtual std::unique_ptr<Token> addWebsocket(
+                const std::string& uri,
+                websocket::Factory factory,
+                const size_t max_num_connections = 0) = 0;
+
+            /**
+             * Add a certificate. Used when TLS is enabled. Must be called
+             * before server is started
+             *
+             * @param cert      Certificate
+             * @param key       Private key for certificate
+             * @param passwd    Password
+             * @returns void
+             */
             virtual void addCertificate(const std::string& cert,
                                         const std::string& key,
                                         const std::string& passwd = "") = 0;
-            virtual void start()                                        = 0;
+            /**
+             * Starts the server
+             *
+             * @returns void
+             */
+            virtual void start() = 0;
 
-            // Only valid after start
+            /**
+             * Get the port number for the server. Only valid after server has
+             * been started.
+             *
+             * @returns int
+             */
             virtual int port() const = 0;
         };
 
+        /**
+         * Create a server instance
+         *
+         * @param address   Address, f.i. "http://127.0.0.1/9080"
+         * @returns A server instance
+         */
         std::shared_ptr<Server> createServer(const std::string& address);
 
     }  // namespace server

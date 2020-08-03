@@ -24,13 +24,11 @@ function send()
     document.getElementById("div").innerHTML = xmlhttp.statusText + ":" + xmlhttp.status + "<BR><textarea rows='2' cols='5'>" + xmlhttp.responseText + "</textarea>";
 }
 </script>
-
-
 <html>
 <body id='bod'><button type="submit" onclick="javascript:send()">call</button>
 <div id='div'>
 </div></body>
-</html>")~";
+</html>)~";
 
     struct TempFile {
         fs::path workdir;
@@ -75,16 +73,16 @@ int main(int argc, char** argv)
         std::cout << "HTTP Server started, listening on port " << server->port()
                   << std::endl;
 
-        server::RouteHolder h;
+        server::TokenHolder h;
         h += server->addDirectory("/", file.directory());
 
         int counter = 1;
-        h += server->addRoute(
-            Method::GET,
-            "/rest/test",
-            [&counter](const server::Request& req, server::Response& resp) {
-                resp.setBody(std::to_string(counter++));
-            });
+        h += server->addRoute(HttpMethod::GET,
+                              "/rest/test",
+                              [&counter](const server::rest::Request&,
+                                         server::rest::Response& resp) {
+                                  resp.setBody(std::to_string(counter++));
+                              });
 
         while (true)
             std::this_thread::sleep_for(std::chrono::milliseconds(100));

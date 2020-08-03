@@ -8,7 +8,7 @@
 
 namespace siesta
 {
-    enum class Method {
+    enum class HttpMethod {
         POST,
         PUT,
         GET,
@@ -93,6 +93,34 @@ namespace siesta
         HttpStatus status() const { return status_; }
         bool has_reason() const { return !reason_.empty(); }
         const char* what() const noexcept override { return reason_.c_str(); }
+    };
+
+    template <class nng_type,
+              class nng_free_function = std::function<void(nng_type*)>>
+    class nng_smart_ptr
+    {
+        nng_type* obj{nullptr};
+        nng_free_function fn_free;
+        void release()
+        {
+            if (obj != nullptr) {
+                fn_free(obj);
+                obj = nullptr;
+            }
+        }
+
+    public:
+        nng_smart_ptr(nng_free_function fn) : fn_free(fn) {}
+        ~nng_smart_ptr() { release(); }
+        nng_smart_ptr& operator=(nng_type* new_obj)
+        {
+            release();
+            obj = new_obj;
+            return *this;
+        }
+        nng_type** operator&() { return &obj; }
+        operator nng_type*() const { return obj; }
+        nng_type* operator->() { return obj; }
     };
 
 }  // namespace siesta

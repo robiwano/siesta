@@ -57,8 +57,8 @@ TEST(siesta, serve_root_uri)
     EXPECT_NO_THROW(server = server::createServer("http://127.0.0.1:8080"));
     EXPECT_NO_THROW(server->start());
 
-    server::RouteHolder routeHolder;
-    EXPECT_NO_THROW(routeHolder += server->addDirectory("/", file.directory()));
+    server::TokenHolder holder;
+    EXPECT_NO_THROW(holder += server->addDirectory("/", file.directory()));
 
     auto f = client::getRequest("http://127.0.0.1:8080/" + file.path(), 1000);
 
@@ -73,9 +73,8 @@ TEST(siesta, serve_non_root_uri)
     EXPECT_NO_THROW(server = server::createServer("http://127.0.0.1:8080"));
     EXPECT_NO_THROW(server->start());
 
-    server::RouteHolder routeHolder;
-    EXPECT_NO_THROW(routeHolder +=
-                    server->addDirectory("/docs", file.directory()));
+    server::TokenHolder holder;
+    EXPECT_NO_THROW(holder += server->addDirectory("/docs", file.directory()));
 
     auto f =
         client::getRequest("http://127.0.0.1:8080/docs/" + file.path(), 1000);

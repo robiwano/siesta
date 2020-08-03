@@ -10,14 +10,15 @@ TEST(siesta, server_ok)
     EXPECT_NO_THROW(server = server::createServer("http://127.0.0.1:8080"));
     EXPECT_NO_THROW(server->start());
 
-    server::RouteHolder routeHolder;
-    EXPECT_NO_THROW(routeHolder += server->addRoute(
-                        siesta::Method::POST,
-                        "/my/test/path",
-                        [](const server::Request& req, server::Response& resp) {
-                            //
-                            resp.setBody(req.getBody());
-                        }));
+    server::TokenHolder TokenHolder;
+    EXPECT_NO_THROW(
+        TokenHolder += server->addRoute(
+            siesta::HttpMethod::POST,
+            "/my/test/path",
+            [](const server::rest::Request& req, server::rest::Response& resp) {
+                //
+                resp.setBody(req.getBody());
+            }));
 
     std::string req_body("{33F949DE-ED30-450C-B903-670EFF210D08}");
     auto f = client::postRequest(
@@ -34,14 +35,15 @@ TEST(siesta, server_not_found)
     EXPECT_NO_THROW(server = server::createServer("http://127.0.0.1:8080"));
     EXPECT_NO_THROW(server->start());
 
-    server::RouteHolder routeHolder;
-    EXPECT_NO_THROW(routeHolder += server->addRoute(
-                        siesta::Method::POST,
-                        "/my/test/path",
-                        [](const server::Request& req, server::Response& resp) {
-                            //
-                            resp.setBody(req.getBody());
-                        }));
+    server::TokenHolder TokenHolder;
+    EXPECT_NO_THROW(
+        TokenHolder += server->addRoute(
+            siesta::HttpMethod::POST,
+            "/my/test/path",
+            [](const server::rest::Request& req, server::rest::Response& resp) {
+                //
+                resp.setBody(req.getBody());
+            }));
 
     std::string req_body("{33F949DE-ED30-450C-B903-670EFF210D08}");
     auto f = client::postRequest(
@@ -63,17 +65,18 @@ TEST(siesta, server_queries)
     EXPECT_NO_THROW(server = server::createServer("http://127.0.0.1:8080"));
     EXPECT_NO_THROW(server->start());
 
-    server::RouteHolder routeHolder;
-    EXPECT_NO_THROW(routeHolder += server->addRoute(
-                        siesta::Method::POST,
-                        "/my/test/path",
-                        [](const server::Request& req, server::Response& resp) {
-                            //
-                            std::stringstream ss;
-                            ss << req.getQueries().at("foo") << std::endl;
-                            ss << req.getQueries().at("bar") << std::endl;
-                            resp.setBody(ss.str());
-                        }));
+    server::TokenHolder TokenHolder;
+    EXPECT_NO_THROW(
+        TokenHolder += server->addRoute(
+            siesta::HttpMethod::POST,
+            "/my/test/path",
+            [](const server::rest::Request& req, server::rest::Response& resp) {
+                //
+                std::stringstream ss;
+                ss << req.getQueries().at("foo") << std::endl;
+                ss << req.getQueries().at("bar") << std::endl;
+                resp.setBody(ss.str());
+            }));
 
     std::string req_body("{33F949DE-ED30-450C-B903-670EFF210D08}");
     auto f = client::postRequest(
@@ -101,19 +104,18 @@ TEST(siesta, server_uri_parameters)
     EXPECT_NO_THROW(server = server::createServer("http://127.0.0.1:8080"));
     EXPECT_NO_THROW(server->start());
 
-    server::RouteHolder routeHolder;
-    EXPECT_NO_THROW(routeHolder += server->addRoute(
-                        siesta::Method::POST,
-                        "/my/:test/:path",
-                        [](const server::Request& req, server::Response& resp) {
-                            //
-                            std::stringstream ss;
-                            ss << req.getUriParameters().at("test")
-                               << std::endl;
-                            ss << req.getUriParameters().at("path")
-                               << std::endl;
-                            resp.setBody(ss.str());
-                        }));
+    server::TokenHolder TokenHolder;
+    EXPECT_NO_THROW(
+        TokenHolder += server->addRoute(
+            siesta::HttpMethod::POST,
+            "/my/:test/:path",
+            [](const server::rest::Request& req, server::rest::Response& resp) {
+                //
+                std::stringstream ss;
+                ss << req.getUriParameters().at("test") << std::endl;
+                ss << req.getUriParameters().at("path") << std::endl;
+                resp.setBody(ss.str());
+            }));
 
     std::string req_body("{33F949DE-ED30-450C-B903-670EFF210D08}");
     auto f = client::postRequest(

@@ -3,6 +3,7 @@ set(
     rest_server
     http_client
     serve_directory
+    web_socket
 )
 
 if (SIESTA_ENABLE_TLS)

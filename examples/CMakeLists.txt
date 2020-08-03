@@ -19,6 +19,7 @@ set(
     rest_client
     rest_server
     static_file_server
+    web_socket_server
 )
 
 foreach(E ${EXAMPLE_SRC})

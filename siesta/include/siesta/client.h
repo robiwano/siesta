@@ -29,5 +29,18 @@ namespace siesta
                                          const std::string& content_type,
                                          const int timeout_ms);
 
-    }  // namespace client
+        namespace websocket
+        {
+            class Writer
+            {
+            public:
+                virtual ~Writer()                               = default;
+                virtual void writeData(const std::string& data) = 0;
+            };
+
+            std::unique_ptr<Writer> connect(
+                const std::string& uri,
+                std::function<void(const std::string&)> reader);
+        }  // namespace websocket
+    }      // namespace client
 }  // namespace siesta
