@@ -9,6 +9,8 @@ namespace fs = ghc::filesystem;
 #include <iostream>
 #include <thread>
 
+#include "ctrl_c_handler.h"
+
 namespace
 {
     constexpr auto html =
@@ -67,6 +69,7 @@ function send()
 
 int main(int argc, char** argv)
 {
+    ctrlc::set_signal_handler();
     try {
         auto server = server::createServer("http://127.0.0.1");
         server->start();
@@ -84,8 +87,10 @@ int main(int argc, char** argv)
                                   resp.setBody(std::to_string(counter++));
                               });
 
-        while (true)
+        while (!ctrlc::signalled()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        std::cout << "Server stopped!" << std::endl;
     } catch (std::exception& e) {
         std::cerr << e.what() << std::endl;
         return -1;

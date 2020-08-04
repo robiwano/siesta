@@ -10,14 +10,15 @@ TEST(siesta, server_create_secure)
     EXPECT_NO_THROW(server = server::createServer("https://127.0.0.1:8080"));
     EXPECT_NO_THROW(server->start());
 
-    server::RouteHolder routeHolder;
-    EXPECT_NO_THROW(routeHolder += server->addRoute(
-                        siesta::Method::POST,
-                        "/my/test/path",
-                        [](const server::Request& req, server::Response& resp) {
-                            //
-                            resp.setBody(req.getBody());
-                        }));
+    server::TokenHolder holder;
+    EXPECT_NO_THROW(
+        holder += server->addRoute(
+            HttpMethod::POST,
+            "/my/test/path",
+            [](const server::rest::Request& req, server::rest::Response& resp) {
+                //
+                resp.setBody(req.getBody());
+            }));
 
     std::string req_body("{33F949DE-ED30-450C-B903-670EFF210D08}");
     auto f = client::postRequest(

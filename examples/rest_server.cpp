@@ -1,76 +1,20 @@
 
 #include <siesta/server.h>
+using namespace siesta;
 
 #include <chrono>
 #include <iostream>
 #include <sstream>
 #include <thread>
 
-using namespace siesta;
-
-#include <nng/nng.h>
-#include <nng/supplemental/util/platform.h>
-
-#define THROW_ON_ERROR(x)                               \
-    {                                                   \
-        auto rv = x;                                    \
-        if (rv != 0) {                                  \
-            throw std::runtime_error(nng_strerror(rv)); \
-        }                                               \
-    }
-
-struct WebsocketConnection : public server::websocket::Reader {
-    server::websocket::Writer& writer;
-    bool stop_thread{false};
-    std::thread thread;
-    WebsocketConnection(server::websocket::Writer& w) : writer(w)
-    {
-        std::cout << "Stream connected (" << this << ")" << std::endl;
-    }
-    ~WebsocketConnection()
-    {
-        stopThread();
-        std::cout << "Stream disconnected (" << this << ")" << std::endl;
-    }
-    void stopThread()
-    {
-        if (thread.joinable()) {
-            stop_thread = true;
-            thread.join();
-            stop_thread = false;
-        }
-    }
-    void onReadData(const std::string& data) override
-    {
-#if 1
-        writer.writeData(data);
-#else
-        stopThread();
-        std::thread t([this, data] {
-            using clock = std::chrono::high_resolution_clock;
-            auto t_next = clock::now();
-            while (!stop_thread) {
-                auto t_now = clock::now();
-                if (t_now >= t_next) {
-                    t_next = t_now + std::chrono::milliseconds(1000);
-                    writer.writeData(data);
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            }
-        });
-        thread.swap(t);
-#endif
-    }
-};
-
-void set_signal_handler();
-static bool stop_server = false;
+#include "ctrl_c_handler.h"
 
 int main(int argc, char** argv)
 {
-    set_signal_handler();
+    ctrlc::set_signal_handler();
     try {
-        std::string addr = "http://127.0.0.1:9080";
+        bool rest_shutdown = false;
+        std::string addr   = "http://127.0.0.1:9080";
         if (argc > 1) {
             addr = argv[1];
         }
@@ -86,7 +30,7 @@ int main(int argc, char** argv)
             HttpMethod::POST,
             "/shutdown",
             [&](const server::rest::Request&, server::rest::Response& res) {
-                stop_server = true;
+                rest_shutdown = true;
                 res.setBody("OK");
             });
 
@@ -171,14 +115,7 @@ int main(int argc, char** argv)
                 resp.setBody(retval.str());
             });
 
-        h += server->addWebsocket(
-            "/test",
-            [](server::websocket::Writer& w) {
-                return new WebsocketConnection(w);
-            },
-            2);
-
-        while (!stop_server) {
+        while (!ctrlc::signalled() && !rest_shutdown) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
 
@@ -190,40 +127,3 @@ int main(int argc, char** argv)
 
     return 0;
 }
-
-#ifdef _WIN32
-
-#include <objbase.h>
-#include <windows.h>
-
-BOOL WINAPI HandlerRoutine(_In_ DWORD dwCtrlType)
-{
-    switch (dwCtrlType) {
-    case CTRL_C_EVENT:
-        stop_server = true;
-        return TRUE;
-    default:
-        // Pass signal on to the next handler
-        return FALSE;
-    }
-}
-
-void set_signal_handler() { SetConsoleCtrlHandler(HandlerRoutine, TRUE); }
-
-#else
-#include <signal.h>
-
-void intHandler(int signal)
-{
-    (void)signal;
-    stop_server = true;
-}
-
-void set_signal_handler()
-{
-    signal(SIGINT, intHandler);
-    signal(SIGSTOP, intHandler);
-    signal(SIGTERM, intHandler);
-}
-
-#endif

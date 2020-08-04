@@ -1,8 +1,8 @@
 
 #include <siesta/client.h>
-#include <iostream>
-
 using namespace siesta;
+
+#include <iostream>
 
 int main(int argc, char** argv)
 {

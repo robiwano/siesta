@@ -1,25 +1,16 @@
 
 #include <siesta/server.h>
+using namespace siesta;
 
 #include <chrono>
 #include <iostream>
-#include <sstream>
 #include <thread>
 
-#include <nng/nng.h>
-#include <nng/supplemental/util/platform.h>
+#include "ctrl_c_handler.h"
 
-#define THROW_ON_ERROR(x)                               \
-    {                                                   \
-        auto rv = x;                                    \
-        if (rv != 0) {                                  \
-            throw std::runtime_error(nng_strerror(rv)); \
-        }                                               \
-    }
-
-struct WebsocketConnection : public siesta::server::websocket::Reader {
-    siesta::server::websocket::Writer& writer;
-    WebsocketConnection(siesta::server::websocket::Writer& w) : writer(w)
+struct WebsocketConnection : server::websocket::Reader {
+    server::websocket::Writer& writer;
+    WebsocketConnection(server::websocket::Writer& w) : writer(w)
     {
         std::cout << "Stream connected (" << this << ")" << std::endl;
     }
@@ -32,30 +23,30 @@ struct WebsocketConnection : public siesta::server::websocket::Reader {
         // Just echo back received data
         writer.writeData(data);
     }
-};
 
-void set_signal_handler();
-static bool stop_server = false;
+    // The websocket factory method
+    static server::websocket::Reader* create(server::websocket::Writer& w)
+    {
+        return new WebsocketConnection(w);
+    }
+};
 
 int main(int argc, char** argv)
 {
-    set_signal_handler();
+    ctrlc::set_signal_handler();
     try {
         std::string addr = "http://127.0.0.1:9080";
         if (argc > 1) {
             addr = argv[1];
         }
-        auto server = siesta::server::createServer(addr);
+        auto server = server::createServer(addr);
         server->start();
         std::cout << "Server started, listening on port " << server->port()
                   << std::endl;
 
-        auto token = server->addWebsocket("/test",
-                                  [](siesta::server::websocket::Writer& w) {
-                                      return new WebsocketConnection(w);
-                                  });
+        auto token = server->addWebsocket("/test", WebsocketConnection::create);
 
-        while (!stop_server) {
+        while (!ctrlc::signalled()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
 
@@ -67,40 +58,3 @@ int main(int argc, char** argv)
 
     return 0;
 }
-
-#ifdef _WIN32
-
-#include <objbase.h>
-#include <windows.h>
-
-BOOL WINAPI HandlerRoutine(_In_ DWORD dwCtrlType)
-{
-    switch (dwCtrlType) {
-    case CTRL_C_EVENT:
-        stop_server = true;
-        return TRUE;
-    default:
-        // Pass signal on to the next handler
-        return FALSE;
-    }
-}
-
-void set_signal_handler() { SetConsoleCtrlHandler(HandlerRoutine, TRUE); }
-
-#else
-#include <signal.h>
-
-void intHandler(int signal)
-{
-    (void)signal;
-    stop_server = true;
-}
-
-void set_signal_handler()
-{
-    signal(SIGINT, intHandler);
-    signal(SIGSTOP, intHandler);
-    signal(SIGTERM, intHandler);
-}
-
-#endif

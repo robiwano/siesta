@@ -1,6 +1,27 @@
 # Siesta
 
-Siesta is a minimalistic HTTP and REST framework for C++, written in pure-C++11, based upon NNG ([Nanomsg-Next-Generation](https://nng.nanomsg.org/)).
+- [Siesta](#siesta)
+- [Features](#features)
+  - [REST API](#rest-api)
+    - [URI parameters](#uri-parameters)
+    - [Queries](#queries)
+  - [Websockets](#websockets)
+- [Building](#building)
+  - [Requirements](#requirements)
+  - [Quick start](#quick-start)
+- [Examples](#examples)
+  - [Hello World (REST API server)](#hello-world-rest-api-server)
+  - [Hello World (client)](#hello-world-client)
+  - [Serving a static directory](#serving-a-static-directory)
+  - [Websocket server](#websocket-server)
+  - [Websocket client](#websocket-client)
+  
+Siesta is a minimalistic HTTP, REST and Websocket framework for C++, written in pure-C++11, based upon NNG ([Nanomsg-Next-Generation](https://nng.nanomsg.org/)).
+
+Main features:
+- Webserver
+- REST API
+- Websocket
 
 The design goals for Siesta are:
 
@@ -14,14 +35,21 @@ Siesta will basically run on any platform supported by NNG. These are (taken fro
 
 Since payloads are plain strings/data, you're free to use any layer on top of this, f.i. JSON or XML.
 
+---
+**NOTE:** Websockets only support **binary mode** at the moment, due to NNG (as of v1.3.1) not supporting text mode. This will (most probably) change in the future.
+
+---
+
 # Features
 
-## URI parameters
+## REST API
+
+### URI parameters
 
 By prefixing a URI route segment with ':', that segment of the URI becomes a *URI parameter*, which can be retrieved in the route handler:
 ```cpp
 ...
-server::RouteHolder h;
+server::TokenHolder h;
 h += server->addRoute(
             Method::GET,
             "/:resource/:index",
@@ -35,12 +63,12 @@ h += server->addRoute(
 ...
 ```
 
-## Queries
+### Queries
 
 URI Queries are supported via `server::Request::getQueries` method:
 ```cpp
 ...
-server::RouteHolder h;
+server::TokenHolder h;
 h += server->addRoute(
             Method::GET,
             "/resource/get",
@@ -55,6 +83,10 @@ h += server->addRoute(
             });
 ...
 ```
+
+## Websockets
+
+The websocket API is built upon a factory pattern, where the websocket session is implemented by the user of the **siesta** framework, see [example below](#websocket-server).
 
 # Building
 
@@ -78,7 +110,7 @@ To build in a Linux environment:
 
 # Examples
 
-## Hello World (server)
+## Hello World (REST API server)
 
 ```cpp
 #include <siesta/server.h>
@@ -149,12 +181,11 @@ int main(int argc, char** argv)
 ## Serving a static directory
 ```cpp
 #include <siesta/server.h>
+using namespace siesta;
 
 #include <chrono>
 #include <iostream>
 #include <thread>
-
-using namespace siesta;
 
 int main(int argc, char** argv)
 {
@@ -174,16 +205,113 @@ int main(int argc, char** argv)
         std::cout << "Server started, listening on port " << server->port()
                   << std::endl;
 
-        server::RouteHolder h;
+        server::TokenHolder h;
         h += server->addDirectory("/", base_path);
 
         std::cout << "Serving folder '" << base_path << "' under URI '/'" << std::endl;
 
-        while (true)
+        while (true) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
     } catch (std::exception& e) {
         std::cerr << e.what() << std::endl;
         return -1;
+    }
+    return 0;
+}
+```
+
+## Websocket server
+
+```cpp
+#include <siesta/server.h>
+using namespace siesta;
+
+#include <chrono>
+#include <iostream>
+#include <thread>
+
+struct WebsocketConnection : server::websocket::Reader {
+    server::websocket::Writer& writer;
+    WebsocketConnection(server::websocket::Writer& w) : writer(w)
+    {
+        std::cout << "Stream connected (" << this << ")" << std::endl;
+    }
+    ~WebsocketConnection()
+    {
+        std::cout << "Stream disconnected (" << this << ")" << std::endl;
+    }
+    void onReadData(const std::string& data) override
+    {
+        // Just echo back received data
+        std::cout << "Echoing data '" << data << "' (" << this << ")" << std::endl;
+        writer.writeData(data);
+    }
+
+    // The websocket factory method
+    static server::websocket::Reader* create(server::websocket::Writer& w)
+    {
+        return new WebsocketConnection(w);
+    }
+};
+
+int main(int argc, char** argv)
+{
+    set_signal_handler();
+    try {
+        std::string addr = "http://127.0.0.1:9080";
+        if (argc > 1) {
+            addr = argv[1];
+        }
+        auto server = server::createServer(addr);
+        server->start();
+        std::cout << "Server started, listening on port " << server->port()
+                  << std::endl;
+
+        auto token = server->addWebsocket("/test", WebsocketConnection::create);
+
+        while (true) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    } catch (std::exception& e) {
+        std::cerr << e.what() << std::endl;
+        return -1;
+    }
+    return 0;
+}
+```
+
+## Websocket client
+
+```cpp
+#include <siesta/client.h>
+using namespace siesta;
+
+#include <chrono>
+#include <iostream>
+#include <thread>
+
+int main(int argc, char** argv)
+{
+    try {
+        std::string addr = "ws://127.0.0.1:9080/test";
+        if (argc > 1) {
+            addr = argv[1];
+        }
+        auto fn_reader = [](const std::string& data) {
+            std::cout << "Received: " << data << std::endl;
+        };
+        auto client = client::websocket::connect(addr, fn_reader);
+        std::cout << "Client connected!" << std::endl;
+
+        while (true) {
+            std::string input;
+            std::getline(std::cin, input);
+            client->writeData(input);
+        }
+    } catch (std::exception& e) {
+        std::cerr << e.what() << std::endl;
+        return 1;
     }
     return 0;
 }

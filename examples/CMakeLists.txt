@@ -19,7 +19,15 @@ set(
     rest_client
     rest_server
     static_file_server
+    web_socket_client
     web_socket_server
+)
+
+add_library(ctrl_c_handler STATIC ctrl_c_handler.cpp)
+target_include_directories(ctrl_c_handler PUBLIC .)
+set_target_properties(ctrl_c_handler
+    PROPERTIES
+    FOLDER "Examples"
 )
 
 foreach(E ${EXAMPLE_SRC})
@@ -31,7 +39,7 @@ foreach(E ${EXAMPLE_SRC})
     endif()
 
     target_include_directories(${EXAMPLE_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-    target_link_libraries(${EXAMPLE_NAME} siesta ghc_filesystem)
+    target_link_libraries(${EXAMPLE_NAME} siesta ghc_filesystem ctrl_c_handler)
     set_target_properties(${EXAMPLE_NAME}
         PROPERTIES
         FOLDER "Examples"

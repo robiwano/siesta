@@ -118,7 +118,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
     static void fatal(const char* what, int rv)
     {
         std::stringstream ss;
-        ss << what << ": " << rv;
+        ss << what << ": " << nng_strerror(rv);
         throw std::runtime_error(ss.str());
     }
 
@@ -397,7 +397,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                 nng_url url       = *base_url_;
                 const bool secure = (strcmp(base_url_->u_scheme, "https") == 0);
                 url.u_path        = (char*)path_.c_str();
-                url.u_scheme      = secure ? "wss" : "ws";
+                url.u_scheme      = (char*)(secure ? "wss" : "ws");
                 int rv = nng_stream_listener_alloc_url(&listener, &url);
                 if (rv != 0) {
                     fatal("nng_stream_listener_alloc_url", rv);
@@ -407,7 +407,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                 nng_stream_listener_set_bool(
                     listener, NNG_OPT_TCP_KEEPALIVE, true);
                 nng_stream_listener_set_size(
-                    listener, NNG_OPT_WS_SENDMAXFRAME, 1'000'000);
+                    listener, NNG_OPT_WS_SENDMAXFRAME, 1000000);
 
                 if ((rv = nng_stream_listener_listen(listener)) != 0) {
                     fatal("nng_stream_listener_alloc_url", rv);
@@ -450,7 +450,8 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                     }
 
                     auto id = streams.empty() ? 1 : streams.rbegin()->first + 1;
-                    auto impl = std::make_unique<StreamInternalImpl>(
+                    auto impl = std::unique_ptr<
+                        StreamInternalImpl>(new StreamInternalImpl(
                         factory, stream, [id, this](StreamInternalImpl*) {
                             dispose_job = std::async(std::launch::async, [=] {
                                 std::lock_guard<std::recursive_mutex> lock(mtx);
@@ -459,7 +460,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                                     startListening();
                                 }
                             });
-                        });
+                        }));
                     streams.insert(std::make_pair(id, std::move(impl)));
                 } catch (std::exception&) {
                 }
@@ -628,7 +629,8 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                                             const std::string& path) override
         {
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
-            auto dir = std::make_unique<directory>(server_, uri, path);
+            auto dir =
+                std::unique_ptr<directory>(new directory(server_, uri, path));
             auto id =
                 directories_.empty() ? 1 : directories_.rbegin()->first + 1;
             auto pThis       = shared_from_this();
@@ -643,9 +645,9 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             const size_t max_num_connections /*= 0 */)
         {
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
-            auto socket = std::make_unique<web_socket>(
-                url_, uri, factory, handler_mutex_, max_num_connections);
-            auto pThis = shared_from_this();
+            auto socket = std::unique_ptr<web_socket>(new web_socket(
+                url_, uri, factory, handler_mutex_, max_num_connections));
+            auto pThis  = shared_from_this();
             const auto id =
                 websockets_.empty() ? 1 : websockets_.rbegin()->first + 1;
             websockets_.emplace(std::make_pair(id, std::move(socket)));
@@ -677,7 +679,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
         {
             int rv;
             if (started_) {
-                throw std::runtime_error("Server already started");
+                return;
             }
             if (tls_cfg_ != nullptr) {
                 // Always add our own self-signed cert for CN=127.0.0.1

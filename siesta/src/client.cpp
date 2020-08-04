@@ -5,6 +5,8 @@
 
 #include <string.h>
 
+#include <vector>
+
 using namespace siesta;
 using namespace siesta::client;
 
