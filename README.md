@@ -142,8 +142,9 @@ int main(int argc, char** argv)
             });
 
         // Run the server forever
-        while (true)
+        while (true) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
     } catch (std::exception& e) {
         std::cerr << e.what() << std::endl;
         return -1;
@@ -257,7 +258,6 @@ struct WebsocketConnection : server::websocket::Reader {
 
 int main(int argc, char** argv)
 {
-    set_signal_handler();
     try {
         std::string addr = "http://127.0.0.1:9080";
         if (argc > 1) {
