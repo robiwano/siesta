@@ -53,7 +53,7 @@ server::TokenHolder h;
 h += server->addRoute(
             Method::GET,
             "/:resource/:index",
-            [](const server::Request& req, server::Response& resp) {
+            [](const server::rest::Request& req, server::rest::Response& resp) {
                 const auto& uri_params = req.getUriParameters();
                 std::stringstream body;
                 body << "resource=" << uri_params.at("resource") << std::endl;
@@ -72,7 +72,7 @@ server::TokenHolder h;
 h += server->addRoute(
             Method::GET,
             "/resource/get",
-            [](const server::Request& req, server::Response& resp) {
+            [](const server::rest::Request& req, server::rest::Response& resp) {
                 const auto& queries = req.getQueries();
                 std::stringstream body;
                 body << "Queries:" << std::endl;
@@ -137,7 +137,7 @@ int main(int argc, char** argv)
         h += server->addRoute(
             Method::GET,
             "/",
-            [](const server::Request&, server::Response& resp) {
+            [](const server::rest::Request&, server::rest::Response& resp) {
                 resp.setBody("Hello, World!");
             });
 
