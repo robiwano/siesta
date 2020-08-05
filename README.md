@@ -130,10 +130,10 @@ int main(int argc, char** argv)
         std::cout << "Server started, listening on port " << server->port()
                   << std::endl;
 
-        server::RouteHolder h;
+        server::TokenHolder h;
 
-        // Must hold on to the returned RouteToken, otherwise the route will
-        // be removed when the RouteToken is destroyed.
+        // Must hold on to the returned Token, otherwise the route will
+        // be removed when the Token is destroyed.
         h += server->addRoute(
             Method::GET,
             "/",
