@@ -179,6 +179,7 @@ namespace
     }
 
     struct WriterImpl : siesta::client::websocket::Writer {
+        nng_smart_ptr<nng_tls_config> tls{nng_tls_config_free};
         nng_smart_ptr<nng_stream_dialer> dialer{nng_stream_dialer_free};
         nng_smart_ptr<nng_aio> aio_dialer{nng_aio_free};
         nng_smart_ptr<nng_aio> aio_read{nng_aio_free};
@@ -191,7 +192,11 @@ namespace
             : reader(r), buffer(32768)
         {
             int rv;
-            if ((rv = nng_stream_dialer_alloc(&dialer, address.c_str())) != 0) {
+            nng_smart_ptr<nng_url> url{nng_url_free};
+            if ((rv = nng_url_parse(&url, address.c_str())) != 0) {
+                fatal("nng_url_parse", rv);
+            }
+            if ((rv = nng_stream_dialer_alloc_url(&dialer, url)) != 0) {
                 fatal("nng_stream_dialer_alloc", rv);
             }
             if ((rv = nng_aio_alloc(&aio_dialer, nullptr, nullptr)) != 0) {
@@ -206,6 +211,28 @@ namespace
             if ((rv = nng_aio_alloc(&aio_write, nullptr, nullptr)) != 0) {
                 fatal("nng_aio_alloc", rv);
             }
+
+            if (strcmp(url->u_scheme, "wss") == 0) {
+                if ((rv = nng_tls_config_alloc(&tls, NNG_TLS_MODE_CLIENT)) !=
+                    0) {
+                    fatal("nng_tls_config_alloc", rv);
+                }
+
+                if ((rv = nng_tls_config_server_name(tls, url->u_hostname)) !=
+                    0) {
+                    fatal("nng_tls_config_server_name", rv);
+                }
+
+                if ((rv = nng_tls_config_auth_mode(
+                         tls, NNG_TLS_AUTH_MODE_NONE)) != 0) {
+                    fatal("nng_tls_config_alloc", rv);
+                }
+                if ((rv = nng_stream_dialer_set_ptr(
+                         dialer, NNG_OPT_TLS_CONFIG, tls)) != 0) {
+                    fatal("nng_stream_dialer_set_ptr", rv);
+                }
+            }
+
             nng_stream_dialer_dial(dialer, aio_dialer);
             nng_aio_wait(aio_dialer);
             rv = nng_aio_result(aio_dialer);

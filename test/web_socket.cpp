@@ -78,4 +78,51 @@ TEST(siesta, websocket_one_client_only)
     EXPECT_THROW(client2 = client::websocket::connect(
                      "ws://127.0.0.1:8080/socket", fn_read_callback),
                  std::runtime_error);
+
+    // Release first connection
+    client1 = nullptr;
+
+    // Try second connection again
+    EXPECT_NO_THROW(client2 = client::websocket::connect(
+                        "ws://127.0.0.1:8080/socket", fn_read_callback));
+}
+
+TEST(siesta, websocket_max_two_clients)
+{
+    std::shared_ptr<server::Server> server;
+    EXPECT_NO_THROW(server = server::createServer("http://127.0.0.1:8080"));
+    EXPECT_NO_THROW(server->start());
+
+    server::TokenHolder holder;
+    EXPECT_NO_THROW(
+        holder += server->addWebsocket(
+            "/socket",
+            [](server::websocket::Writer& w) { return new MySocketImpl(w); },
+            2 /* Limit to two connections */));
+
+    std::unique_ptr<client::websocket::Writer> client1;
+    std::unique_ptr<client::websocket::Writer> client2;
+    std::unique_ptr<client::websocket::Writer> client3;
+
+    auto fn_read_callback = [&](const std::string& data) {};
+
+    // First connection ok
+    EXPECT_NO_THROW(client1 = client::websocket::connect(
+                        "ws://127.0.0.1:8080/socket", fn_read_callback));
+
+    // Second connection too
+    EXPECT_NO_THROW(client2 = client::websocket::connect(
+                        "ws://127.0.0.1:8080/socket", fn_read_callback));
+
+    // Third connection though shall fail
+    EXPECT_THROW(client3 = client::websocket::connect(
+                     "ws://127.0.0.1:8080/socket", fn_read_callback),
+                 std::runtime_error);
+
+    // Release first connection
+    client1 = nullptr;
+
+    // Try third connection again
+    EXPECT_NO_THROW(client3 = client::websocket::connect(
+                        "ws://127.0.0.1:8080/socket", fn_read_callback));
 }

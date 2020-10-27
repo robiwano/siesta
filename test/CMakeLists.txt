@@ -11,6 +11,7 @@ if (SIESTA_ENABLE_TLS)
         TEST_SRC
         ${TEST_SRC}
         rest_secure_server
+        web_socket_secure
     )
 endif()
 

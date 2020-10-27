@@ -358,17 +358,20 @@ zFX5yAtcD5BnoPBo0CE5y/I=
 
             const nng_url* base_url_;
             std::string path_;
+            const bool text_mode_;
             const size_t max_num_connections_;
 
             web_socket(const nng_url* base_url,
                        const std::string& path,
                        websocket::Factory f,
                        std::recursive_mutex& m,
+                       const bool text_mode,
                        const size_t max_num_connections)
                 : base_url_(base_url)
                 , path_(path)
                 , factory(f)
                 , mtx(m)
+                , text_mode_(text_mode)
                 , max_num_connections_(max_num_connections)
             {
                 int rv;
@@ -408,6 +411,12 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                     listener, NNG_OPT_TCP_KEEPALIVE, true);
                 nng_stream_listener_set_size(
                     listener, NNG_OPT_WS_SENDMAXFRAME, 1000000);
+                if (text_mode_) {
+                    nng_stream_listener_set_bool(
+                        listener, NNG_OPT_WS_SEND_TEXT, true);
+                    nng_stream_listener_set_bool(
+                        listener, NNG_OPT_WS_RECV_TEXT, true);
+                }
 
                 if ((rv = nng_stream_listener_listen(listener)) != 0) {
                     fatal("nng_stream_listener_alloc_url", rv);
@@ -642,12 +651,18 @@ zFX5yAtcD5BnoPBo0CE5y/I=
         std::unique_ptr<Token> addWebsocket(
             const std::string& uri,
             websocket::Factory factory,
+            const bool text_mode /*= true */,
             const size_t max_num_connections /*= 0 */)
         {
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
-            auto socket = std::unique_ptr<web_socket>(new web_socket(
-                url_, uri, factory, handler_mutex_, max_num_connections));
-            auto pThis  = shared_from_this();
+            auto socket = std::unique_ptr<web_socket>(
+                new web_socket(url_,
+                               uri,
+                               factory,
+                               handler_mutex_,
+                               text_mode,
+                               max_num_connections));
+            auto pThis = shared_from_this();
             const auto id =
                 websockets_.empty() ? 1 : websockets_.rbegin()->first + 1;
             websockets_.emplace(std::make_pair(id, std::move(socket)));

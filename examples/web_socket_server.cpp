@@ -21,6 +21,8 @@ struct WebsocketConnection : server::websocket::Reader {
     void onReadData(const std::string& data) override
     {
         // Just echo back received data
+        std::cout << "Echoing back '" << data << "' (" << this << ")"
+                  << std::endl;
         writer.writeData(data);
     }
 
@@ -39,17 +41,19 @@ int main(int argc, char** argv)
         if (argc > 1) {
             addr = argv[1];
         }
-        auto server = server::createServer(addr);
-        server->start();
-        std::cout << "Server started, listening on port " << server->port()
-                  << std::endl;
+        {
+            auto server = server::createServer(addr);
+            server->start();
+            std::cout << "Server started, listening on port " << server->port()
+                      << std::endl;
 
-        auto token = server->addWebsocket("/test", WebsocketConnection::create);
+            auto token =
+                server->addWebsocket("/test", WebsocketConnection::create);
 
-        while (!ctrlc::signalled()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            while (!ctrlc::signalled()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
         }
-
         std::cout << "Server stopped!" << std::endl;
     } catch (std::exception& e) {
         std::cerr << e.what() << std::endl;

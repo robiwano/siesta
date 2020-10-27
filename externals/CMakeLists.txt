@@ -33,7 +33,7 @@ if (SIESTA_BUILD_TESTS)
     set_target_properties(
         gmock gmock_main gtest gtest_main
         PROPERTIES 
-        FOLDER "Test/common"
+        FOLDER "Tests/common"
     )
 
     fetch_repo(

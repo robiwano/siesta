@@ -119,14 +119,16 @@ namespace siesta
              *
              * @param uri                   Websocket URI
              * @param factory               Factory for websocket handler.
+             * @param text_mode             Set to true for text mode (default)
              * @param max_num_connections   Max # of concurrent sessions for
-             * websocket. Set to zero for no limit.
+             * websocket. Set to zero for no limit (default).
              * @returns A token. Hold on to returned token to keep websocket
              * "alive". When token goes out of scope, websocket is removed.
              */
             NO_DISCARD virtual std::unique_ptr<Token> addWebsocket(
                 const std::string& uri,
                 websocket::Factory factory,
+                const bool text_mode             = true,
                 const size_t max_num_connections = 0) = 0;
 
             /**

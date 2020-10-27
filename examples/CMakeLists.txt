@@ -27,7 +27,7 @@ add_library(ctrl_c_handler STATIC ctrl_c_handler.cpp)
 target_include_directories(ctrl_c_handler PUBLIC .)
 set_target_properties(ctrl_c_handler
     PROPERTIES
-    FOLDER "Examples"
+    FOLDER "Examples/common"
 )
 
 foreach(E ${EXAMPLE_SRC})
