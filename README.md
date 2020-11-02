@@ -21,7 +21,7 @@ Siesta is a minimalistic HTTP, REST and Websocket framework for C++, written in 
 Main features:
 - Webserver
 - REST API
-- Websocket
+- Websocket (binary/text)
 
 The design goals for Siesta are:
 
@@ -34,11 +34,6 @@ The design goals for Siesta are:
 Siesta will basically run on any platform supported by NNG. These are (taken from NNG Github Readme): Linux, macOS, Windows (Vista or better), illumos, Solaris, FreeBSD, Android, and iOS.
 
 Since payloads are plain strings/data, you're free to use any layer on top of this, f.i. JSON or XML.
-
----
-**NOTE:** Websockets only support **binary mode** at the moment, due to NNG (as of v1.3.1) not supporting text mode. This will (most probably) change in the future.
-
----
 
 # Features
 
