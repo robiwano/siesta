@@ -12,22 +12,33 @@ namespace siesta
     {
         using Response = std::future<std::string>;
 
-        NO_DISCARD Response getRequest(const std::string& uri,
-                                       const int timeout_ms);
+        NO_DISCARD Response getRequest(
+            const std::string& address,
+            const std::vector<std::pair<std::string, std::string>> headers =
+                std::vector<std::pair<std::string, std::string>>(),
+            const int timeout_ms = 1000);
         NO_DISCARD Response putRequest(const std::string& uri,
                                        const std::string& body,
                                        const std::string& content_type,
-                                       const int timeout_ms);
+            const std::vector<std::pair<std::string, std::string>> headers =
+                std::vector<std::pair<std::string, std::string>>(),
+                                       const int timeout_ms = 1000);
         NO_DISCARD Response postRequest(const std::string& uri,
                                         const std::string& body,
                                         const std::string& content_type,
-                                        const int timeout_ms);
+            const std::vector<std::pair<std::string, std::string>> headers =
+                std::vector<std::pair<std::string, std::string>>(),
+                                        const int timeout_ms = 1000);
         NO_DISCARD Response deleteRequest(const std::string& uri,
-                                          const int timeout_ms);
+            const std::vector<std::pair<std::string, std::string>> headers =
+                std::vector<std::pair<std::string, std::string>>(),
+                                          const int timeout_ms = 1000);
         NO_DISCARD Response patchRequest(const std::string& uri,
                                          const std::string& body,
                                          const std::string& content_type,
-                                         const int timeout_ms);
+            const std::vector<std::pair<std::string, std::string>> headers =
+                std::vector<std::pair<std::string, std::string>>(),
+                                         const int timeout_ms = 1000);
 
         namespace websocket
         {

@@ -18,6 +18,7 @@ namespace
     }
 
     Response doRequest(HttpMethod method,
+                       const std::vector<std::pair<std::string, std::string>> header,
                        const std::string& address,
                        const std::string& body,
                        const std::string& content_type,
@@ -111,6 +112,16 @@ namespace
                 if (!content_type.empty()) {
                     if ((rv = nng_http_req_add_header(
                              req, "content-type", content_type.c_str())) != 0) {
+                        fatal("Failed setting content type header", rv);
+                    }
+                }
+            }
+            if (!header.empty()) {
+                for (auto& key  : header) {
+                    if ((rv = nng_http_req_add_header(
+                             req,
+                             (key.first).c_str(),
+                             (key.second).c_str())) != 0) {
                         fatal("Failed setting content type header", rv);
                     }
                 }
@@ -283,41 +294,47 @@ namespace
     };
 }  // namespace
 
-siesta::client::Response siesta::client::getRequest(const std::string& address,
+siesta::client::Response siesta::client::getRequest(
+                                                    const std::string& address,
+                                                    const std::vector<std::pair<std::string, std::string>> headers,
                                                     const int timeout_ms)
 {
-    return doRequest(HttpMethod::GET, address, "", "", timeout_ms);
+    return doRequest(HttpMethod::GET, headers, address, "", "", timeout_ms);
 }
 
 Response siesta::client::putRequest(const std::string& address,
                                     const std::string& body,
                                     const std::string& content_type,
+                                    const std::vector<std::pair<std::string, std::string>> headers,
                                     const int timeout_ms)
 {
-    return doRequest(HttpMethod::PUT, address, body, content_type, timeout_ms);
+    return doRequest(HttpMethod::PUT, headers, address, body, content_type, timeout_ms);
 }
 
 Response siesta::client::postRequest(const std::string& address,
                                      const std::string& body,
                                      const std::string& content_type,
+                                     const std::vector<std::pair<std::string, std::string>> headers,
                                      const int timeout_ms)
 {
-    return doRequest(HttpMethod::POST, address, body, content_type, timeout_ms);
+    return doRequest(HttpMethod::POST, headers, address, body, content_type, timeout_ms);
 }
 
 Response siesta::client::deleteRequest(const std::string& address,
+                                       const std::vector<std::pair<std::string, std::string>> headers,
                                        const int timeout_ms)
 {
-    return doRequest(HttpMethod::DEL, address, "", "", timeout_ms);
+    return doRequest(HttpMethod::DEL, headers, address, "", "", timeout_ms);
 }
 
 Response siesta::client::patchRequest(const std::string& address,
                                       const std::string& body,
                                       const std::string& content_type,
+                                      const std::vector<std::pair<std::string, std::string>> headers,
                                       const int timeout_ms)
 {
     return doRequest(
-        HttpMethod::PATCH, address, body, content_type, timeout_ms);
+        HttpMethod::PATCH, headers, address, body, content_type, timeout_ms);
 }
 
 std::unique_ptr<siesta::client::websocket::Writer>

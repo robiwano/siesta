@@ -21,8 +21,12 @@ TEST(siesta, server_ok)
             }));
 
     std::string req_body("{33F949DE-ED30-450C-B903-670EFF210D08}");
-    auto f = client::postRequest(
-        "http://127.0.0.1:8080/my/test/path", req_body, "", 5000);
+    auto f =
+        client::postRequest("http://127.0.0.1:8080/my/test/path",
+                            req_body,
+                            "",
+                            std::vector<std::pair<std::string, std::string>>(),
+                            5000);
 
     std::string result;
     EXPECT_NO_THROW(result = f.get());
@@ -46,8 +50,12 @@ TEST(siesta, server_not_found)
             }));
 
     std::string req_body("{33F949DE-ED30-450C-B903-670EFF210D08}");
-    auto f = client::postRequest(
-        "http://127.0.0.1:8080/path/not/found", req_body, "", 5000);
+    auto f =
+        client::postRequest("http://127.0.0.1:8080/path/not/found",
+                            req_body,
+                            "",
+                            std::vector<std::pair<std::string, std::string>>(),
+                            5000);
 
     try {
         auto result = f.get();
@@ -79,8 +87,12 @@ TEST(siesta, server_queries)
             }));
 
     std::string req_body("{33F949DE-ED30-450C-B903-670EFF210D08}");
-    auto f = client::postRequest(
-        "http://127.0.0.1:8080/my/test/path?foo=23&bar=42", req_body, "", 5000);
+    auto f =
+        client::postRequest("http://127.0.0.1:8080/my/test/path?foo=23&bar=42",
+                            req_body,
+                            "",
+                            std::vector<std::pair<std::string, std::string>>(),
+                            5000);
 
     try {
         auto result = f.get();
@@ -118,8 +130,12 @@ TEST(siesta, server_uri_parameters)
             }));
 
     std::string req_body("{33F949DE-ED30-450C-B903-670EFF210D08}");
-    auto f = client::postRequest(
-        "http://127.0.0.1:8080/my/23/42", req_body, "", 5000);
+    auto f =
+        client::postRequest("http://127.0.0.1:8080/my/23/42",
+                            req_body,
+                            "",
+                            std::vector<std::pair<std::string, std::string>>(),
+                            5000);
 
     try {
         auto result = f.get();

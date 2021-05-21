@@ -5,8 +5,10 @@
 
 TEST(siesta, client_connect_ok)
 {
-    auto f = siesta::client::getRequest("http://postman-echo.com/get?foo1=bar1",
-                                        5000);
+    auto f = siesta::client::getRequest(
+        "http://postman-echo.com/get?foo1=bar1",
+        std::vector<std::pair<std::string, std::string>>(),
+        5000);
 
     std::string resp;
     EXPECT_NO_THROW(resp = f.get());
@@ -15,7 +17,10 @@ TEST(siesta, client_connect_ok)
 
 TEST(siesta, client_connect_timeout)
 {
-    auto f = siesta::client::getRequest("http://blarf.info", 1000);
+    auto f = siesta::client::getRequest(
+        "http://blarf.info",
+        std::vector<std::pair<std::string, std::string>>(),
+        1000);
 
     using clock  = std::chrono::high_resolution_clock;
     auto t_start = clock::now();
