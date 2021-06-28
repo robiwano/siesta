@@ -29,7 +29,11 @@ int main(int argc, char** argv)
         h += server->addRoute(
             HttpMethod::POST,
             "/shutdown",
-            [&](const server::rest::Request&, server::rest::Response& res) {
+            [&](const server::rest::Request& req, server::rest::Response& res) {
+                if (req.getHeader("api_key").find("123456") == std::string::npos) { // make your own system
+                    res.setBody("{\"error\":\"Invalid Api Key\"}"); // no json library
+                   return;
+                }
                 rest_shutdown = true;
                 res.setBody("OK");
             });
@@ -47,7 +51,7 @@ int main(int argc, char** argv)
 
         h += server->addRoute(
             HttpMethod::POST,
-            "/api/:name",
+            "/api/create/:name",
             [&](const server::rest::Request& req, server::rest::Response& res) {
                 auto name = req.getUriParameters().at("name");
                 auto it   = resource.find(name);
@@ -60,8 +64,13 @@ int main(int argc, char** argv)
 
         h += server->addRoute(
             HttpMethod::GET,
-            "/api/:name",
+            "/api/get/:name",
             [&](const server::rest::Request& req, server::rest::Response& res) {
+
+                if (req.getHeader("api_key").find("123456") == std::string::npos) { // make your own system
+                    res.setBody("{\"error\":\"Invalid Api Key\"}"); // no json library
+                    return; // i prefer over throwing an exception...
+                }
                 auto name = req.getUriParameters().at("name");
                 auto it   = resource.find(name);
                 if (it == resource.end()) {
@@ -72,7 +81,7 @@ int main(int argc, char** argv)
 
         h += server->addRoute(
             HttpMethod::PUT,
-            "/api/:name",
+            "/api/put/:name",
             [&](const server::rest::Request& req, server::rest::Response& res) {
                 auto name = req.getUriParameters().at("name");
                 auto it   = resource.find(name);
@@ -84,7 +93,7 @@ int main(int argc, char** argv)
 
         h += server->addRoute(
             HttpMethod::DEL,
-            "/api/:name",
+            "/api/del/:name",
             [&](const server::rest::Request& req, server::rest::Response& res) {
                 auto name = req.getUriParameters().at("name");
                 auto it   = resource.find(name);

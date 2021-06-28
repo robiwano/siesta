@@ -163,7 +163,7 @@ using namespace siesta;
 int main(int argc, char** argv)
 {
     try {
-        auto f        = client::getRequest("http://127.0.0.1:9080/", 1000);
+        auto f        = client::getRequest("http://127.0.0.1:9080/");
         auto response = f.get();
         std::cout << response << std::endl;
     } catch (std::exception& e) {
