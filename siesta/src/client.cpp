@@ -17,12 +17,13 @@ namespace
         throw std::runtime_error(msg + ": " + std::string(nng_strerror(rv)));
     }
 
-    Response doRequest(HttpMethod method,
-                       const std::vector<std::pair<std::string, std::string>> header,
-                       const std::string& address,
-                       const std::string& body,
-                       const std::string& content_type,
-                       const int timeout_ms)
+    Response doRequest(
+        HttpMethod method,
+        const std::vector<std::pair<std::string, std::string>> header,
+        const std::string& address,
+        const std::string& body,
+        const std::string& content_type,
+        const int timeout_ms)
     {
         auto f = std::async(std::launch::async, [=]() -> std::string {
             int rv;
@@ -117,11 +118,10 @@ namespace
                 }
             }
             if (!header.empty()) {
-                for (auto& key  : header) {
+                for (auto& key : header) {
                     if ((rv = nng_http_req_add_header(
-                             req,
-                             (key.first).c_str(),
-                             (key.second).c_str())) != 0) {
+                             req, (key.first).c_str(), (key.second).c_str())) !=
+                        0) {
                         fatal("Failed setting content type header", rv);
                     }
                 }
@@ -199,7 +199,8 @@ namespace
         std::vector<uint8_t> buffer;
         std::function<void(const std::string&)> reader;
         WriterImpl(const std::string& address,
-                   std::function<void(const std::string&)> r)
+                   std::function<void(const std::string&)> r,
+                   const bool text_mode)
             : reader(r), buffer(32768)
         {
             int rv;
@@ -242,6 +243,10 @@ namespace
                          dialer, NNG_OPT_TLS_CONFIG, tls)) != 0) {
                     fatal("nng_stream_dialer_set_ptr", rv);
                 }
+            }
+            if (text_mode) {
+                nng_stream_dialer_set_bool(dialer, NNG_OPT_WS_RECV_TEXT, true);
+                nng_stream_dialer_set_bool(dialer, NNG_OPT_WS_SEND_TEXT, true);
             }
 
             nng_stream_dialer_dial(dialer, aio_dialer);
@@ -294,54 +299,56 @@ namespace
     };
 }  // namespace
 
-siesta::client::Response siesta::client::getRequest(
-                                                    const std::string& address,
-                                                    const std::vector<std::pair<std::string, std::string>> headers,
-                                                    const int timeout_ms)
+Response siesta::client::getRequest(const std::string& address,
+                                    const Headers& headers /*= Headers()*/,
+                                    const int timeout_ms /*= 1000*/)
 {
     return doRequest(HttpMethod::GET, headers, address, "", "", timeout_ms);
 }
 
-Response siesta::client::putRequest(const std::string& address,
+Response siesta::client::putRequest(const std::string& uri,
                                     const std::string& body,
                                     const std::string& content_type,
-                                    const std::vector<std::pair<std::string, std::string>> headers,
-                                    const int timeout_ms)
-{
-    return doRequest(HttpMethod::PUT, headers, address, body, content_type, timeout_ms);
-}
-
-Response siesta::client::postRequest(const std::string& address,
-                                     const std::string& body,
-                                     const std::string& content_type,
-                                     const std::vector<std::pair<std::string, std::string>> headers,
-                                     const int timeout_ms)
-{
-    return doRequest(HttpMethod::POST, headers, address, body, content_type, timeout_ms);
-}
-
-Response siesta::client::deleteRequest(const std::string& address,
-                                       const std::vector<std::pair<std::string, std::string>> headers,
-                                       const int timeout_ms)
-{
-    return doRequest(HttpMethod::DEL, headers, address, "", "", timeout_ms);
-}
-
-Response siesta::client::patchRequest(const std::string& address,
-                                      const std::string& body,
-                                      const std::string& content_type,
-                                      const std::vector<std::pair<std::string, std::string>> headers,
-                                      const int timeout_ms)
+                                    const Headers& headers /*= Headers()*/,
+                                    const int timeout_ms /*= 1000*/)
 {
     return doRequest(
-        HttpMethod::PATCH, headers, address, body, content_type, timeout_ms);
+        HttpMethod::PUT, headers, uri, body, content_type, timeout_ms);
+}
+
+Response siesta::client::postRequest(const std::string& uri,
+                                     const std::string& body,
+                                     const std::string& content_type,
+                                     const Headers& headers /*= Headers()*/,
+                                     const int timeout_ms /*= 1000*/)
+{
+    return doRequest(
+        HttpMethod::POST, headers, uri, body, content_type, timeout_ms);
+}
+
+Response siesta::client::deleteRequest(const std::string& uri,
+                                       const Headers& headers /*= Headers()*/,
+                                       const int timeout_ms /*= 1000*/)
+{
+    return doRequest(HttpMethod::DEL, headers, uri, "", "", timeout_ms);
+}
+
+Response siesta::client::patchRequest(const std::string& uri,
+                                      const std::string& body,
+                                      const std::string& content_type,
+                                      const Headers& headers /*= Headers()*/,
+                                      const int timeout_ms /*= 1000*/)
+{
+    return doRequest(
+        HttpMethod::PATCH, headers, uri, body, content_type, timeout_ms);
 }
 
 std::unique_ptr<siesta::client::websocket::Writer>
 siesta::client::websocket::connect(
     const std::string& uri,
-    std::function<void(const std::string&)> reader)
+    std::function<void(const std::string&)> reader,
+    const bool text_mode /*= true */)
 {
     return std::unique_ptr<siesta::client::websocket::Writer>(
-        new WriterImpl(uri, reader));
+        new WriterImpl(uri, reader, text_mode));
 }
