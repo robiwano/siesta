@@ -21,8 +21,11 @@ TEST(siesta, server_create_secure)
             }));
 
     std::string req_body("{33F949DE-ED30-450C-B903-670EFF210D08}");
-    auto f = client::postRequest(
-        "https://127.0.0.1:8080/my/test/path", req_body, "", 5000);
+    auto f = client::postRequest("https://127.0.0.1:8080/my/test/path",
+                                 req_body,
+                                 "",
+                                 siesta::client::Headers(),
+                                 5000);
 
     std::string result;
     EXPECT_NO_THROW(result = f.get());

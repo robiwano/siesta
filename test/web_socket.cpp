@@ -25,7 +25,7 @@ TEST(siesta, websocket_echo)
     EXPECT_NO_THROW(server->start());
 
     server::TokenHolder holder;
-    EXPECT_NO_THROW(holder += server->addWebsocket(
+    EXPECT_NO_THROW(holder += server->addTextWebsocket(
                         "/socket", [](server::websocket::Writer& w) {
                             return new MySocketImpl(w);
                         }));
@@ -60,7 +60,7 @@ TEST(siesta, websocket_one_client_only)
 
     server::TokenHolder holder;
     EXPECT_NO_THROW(
-        holder += server->addWebsocket(
+        holder += server->addTextWebsocket(
             "/socket",
             [](server::websocket::Writer& w) { return new MySocketImpl(w); },
             1 /* Limit to one connection */));
@@ -95,7 +95,7 @@ TEST(siesta, websocket_max_two_clients)
 
     server::TokenHolder holder;
     EXPECT_NO_THROW(
-        holder += server->addWebsocket(
+        holder += server->addTextWebsocket(
             "/socket",
             [](server::websocket::Writer& w) { return new MySocketImpl(w); },
             2 /* Limit to two connections */));
@@ -121,6 +121,8 @@ TEST(siesta, websocket_max_two_clients)
 
     // Release first connection
     client1 = nullptr;
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
     // Try third connection again
     EXPECT_NO_THROW(client3 = client::websocket::connect(

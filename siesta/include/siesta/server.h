@@ -115,20 +115,33 @@ namespace siesta
                 const std::string& path) = 0;
 
             /**
-             * Adds websocket handler.
+             * Adds websocket handler for text mode websocket.
              *
              * @param uri                   Websocket URI
              * @param factory               Factory for websocket handler.
-             * @param text_mode             Set to true for text mode (default)
              * @param max_num_connections   Max # of concurrent sessions for
              * websocket. Set to zero for no limit (default).
              * @returns A token. Hold on to returned token to keep websocket
              * "alive". When token goes out of scope, websocket is removed.
              */
-            NO_DISCARD virtual std::unique_ptr<Token> addWebsocket(
+            NO_DISCARD virtual std::unique_ptr<Token> addTextWebsocket(
                 const std::string& uri,
                 websocket::Factory factory,
-                const bool text_mode             = true,
+                const size_t max_num_connections = 0) = 0;
+
+            /**
+             * Adds websocket handler for binary mode websocket.
+             *
+             * @param uri                   Websocket URI
+             * @param factory               Factory for websocket handler.
+             * @param max_num_connections   Max # of concurrent sessions for
+             * websocket. Set to zero for no limit (default).
+             * @returns A token. Hold on to returned token to keep websocket
+             * "alive". When token goes out of scope, websocket is removed.
+             */
+            NO_DISCARD virtual std::unique_ptr<Token> addBinaryWebsocket(
+                const std::string& uri,
+                websocket::Factory factory,
                 const size_t max_num_connections = 0) = 0;
 
             /**

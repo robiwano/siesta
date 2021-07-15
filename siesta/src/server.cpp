@@ -648,10 +648,25 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                 [pThis, id] { pThis->removeDirectory(id); }));
         }
 
-        std::unique_ptr<Token> addWebsocket(
+        std::unique_ptr<Token> addTextWebsocket(
             const std::string& uri,
             websocket::Factory factory,
-            const bool text_mode /*= true */,
+            const size_t max_num_connections /*= 0 */)
+        {
+            std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
+            auto socket = std::unique_ptr<web_socket>(new web_socket(
+                url_, uri, factory, handler_mutex_, true, max_num_connections));
+            auto pThis  = shared_from_this();
+            const auto id =
+                websockets_.empty() ? 1 : websockets_.rbegin()->first + 1;
+            websockets_.emplace(std::make_pair(id, std::move(socket)));
+            return std::unique_ptr<Token>(new RouteTokenImpl(
+                [pThis, id] { pThis->removeWebsocket(id); }));
+        }
+
+        std::unique_ptr<Token> addBinaryWebsocket(
+            const std::string& uri,
+            websocket::Factory factory,
             const size_t max_num_connections /*= 0 */)
         {
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
@@ -660,7 +675,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                                uri,
                                factory,
                                handler_mutex_,
-                               text_mode,
+                               false,
                                max_num_connections));
             auto pThis = shared_from_this();
             const auto id =

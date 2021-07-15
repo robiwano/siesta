@@ -48,7 +48,7 @@ int main(int argc, char** argv)
                       << std::endl;
 
             auto token =
-                server->addWebsocket("/test", WebsocketConnection::create);
+                server->addTextWebsocket("/test", WebsocketConnection::create);
 
             while (!ctrlc::signalled()) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));

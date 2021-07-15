@@ -25,7 +25,7 @@ TEST(siesta, websocket_secure_echo)
     EXPECT_NO_THROW(server->start());
 
     server::TokenHolder holder;
-    EXPECT_NO_THROW(holder += server->addWebsocket(
+    EXPECT_NO_THROW(holder += server->addTextWebsocket(
                         "/socket", [](server::websocket::Writer& w) {
                             return new MySocketImpl(w);
                         }));
