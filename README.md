@@ -46,7 +46,7 @@ By prefixing a URI route segment with ':', that segment of the URI becomes a *UR
 ...
 server::TokenHolder h;
 h += server->addRoute(
-            Method::GET,
+            HttpMethod::GET,
             "/:resource/:index",
             [](const server::rest::Request& req, server::rest::Response& resp) {
                 const auto& uri_params = req.getUriParameters();
@@ -65,7 +65,7 @@ URI Queries are supported via `server::Request::getQueries` method:
 ...
 server::TokenHolder h;
 h += server->addRoute(
-            Method::GET,
+            HttpMethod::GET,
             "/resource/get",
             [](const server::rest::Request& req, server::rest::Response& resp) {
                 const auto& queries = req.getQueries();
@@ -130,7 +130,7 @@ int main(int argc, char** argv)
         // Must hold on to the returned Token, otherwise the route will
         // be removed when the Token is destroyed.
         h += server->addRoute(
-            Method::GET,
+            HttpMethod::GET,
             "/",
             [](const server::rest::Request&, server::rest::Response& resp) {
                 resp.setBody("Hello, World!");
