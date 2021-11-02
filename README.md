@@ -237,11 +237,11 @@ struct WebsocketConnection : server::websocket::Reader {
     {
         std::cout << "Stream disconnected (" << this << ")" << std::endl;
     }
-    void onReadData(const std::string& data) override
+    void onMessage(const std::string& data) override
     {
         // Just echo back received data
         std::cout << "Echoing data '" << data << "' (" << this << ")" << std::endl;
-        writer.writeData(data);
+        writer.send(data);
     }
 
     // The websocket factory method
@@ -293,16 +293,31 @@ int main(int argc, char** argv)
         if (argc > 1) {
             addr = argv[1];
         }
-        auto fn_reader = [](const std::string& data) {
+        auto on_open = [](client::websocket::Writer&) {
+            std::cout << "Client connected!" << std::endl;
+        };
+        auto on_close = [](client::websocket::Writer&,
+                           const std::string& error) {
+            std::cout << "Error: " << error << std::endl;
+        };
+        auto on_close = [](client::websocket::Writer&) {
+            std::cout << "Client disconnected!" << std::endl;
+        };
+
+        auto on_message = [](client::websocket::Writer&,
+                             const std::string& data) {
             std::cout << "Received: " << data << std::endl;
         };
-        auto client = client::websocket::connect(addr, fn_reader);
-        std::cout << "Client connected!" << std::endl;
+        auto client = client::websocket::connect(addr,
+            on_message,
+            on_open,
+            on_error,
+            on_close);
 
         while (true) {
             std::string input;
             std::getline(std::cin, input);
-            client->writeData(input);
+            client->send(input);
         }
     } catch (std::exception& e) {
         std::cerr << e.what() << std::endl;
