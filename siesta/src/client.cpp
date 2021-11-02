@@ -197,11 +197,21 @@ namespace
         nng_smart_ptr<nng_aio> aio_write{nng_aio_free};
         nng_smart_ptr<nng_stream> stream{nng_stream_free};
         std::vector<uint8_t> buffer;
-        std::function<void(const std::string&)> reader;
+        std::function<void(Writer&, const std::string&)> on_message;
+        std::function<void(Writer&)> on_open;
+        std::function<void(Writer&, const std::string&)> on_error;
+        std::function<void(Writer&)> on_close;
         WriterImpl(const std::string& address,
-                   std::function<void(const std::string&)> r,
+                   std::function<void(Writer&, const std::string&)> message,
+                   std::function<void(Writer&)> open,
+                   std::function<void(Writer&, const std::string&)> error,
+                   std::function<void(Writer&)> close,
                    const bool text_mode)
-            : reader(r), buffer(32768)
+            : on_message(message)
+            , on_open(open)
+            , on_error(error)
+            , on_close(close)
+            , buffer(32768)
         {
             int rv;
             nng_smart_ptr<nng_url> url{nng_url_free};
@@ -256,6 +266,9 @@ namespace
                 fatal("dial", rv);
             }
             stream = (nng_stream*)nng_aio_get_output(aio_dialer, 0);
+            if (on_open) {
+                on_open(*this);
+            }
             startRead();
         }
         ~WriterImpl()
@@ -277,15 +290,26 @@ namespace
         {
             int rv = nng_aio_result(aio_read);
             if (rv != 0) {
+                if (rv == NNG_ECLOSED) {
+                    if (on_close) {
+                        on_close(*this);
+                    }
+                } else {
+                    if (on_error) {
+                        on_error(*this, nng_strerror(rv));
+                    }
+                }
                 return;
             }
             auto len = nng_aio_count(aio_read);
             std::string data((const char*)buffer.data(), len);
-            reader(data);
+            if (on_message) {
+                on_message(*this, data);
+            }
             startRead();
         }
 
-        void writeData(const std::string& data) override
+        void send(const std::string& data) override
         {
             nng_iov iov{(void*)data.data(), data.size()};
             nng_aio_set_iov(aio_write, 1, &iov);
@@ -346,9 +370,12 @@ Response siesta::client::patchRequest(const std::string& uri,
 std::unique_ptr<siesta::client::websocket::Writer>
 siesta::client::websocket::connect(
     const std::string& uri,
-    std::function<void(const std::string&)> reader,
-    const bool text_mode /*= true */)
+    std::function<void(Writer&, const std::string&)> on_message,
+    std::function<void(Writer&)> on_open /*= nullptr*/,
+    std::function<void(Writer&, const std::string&)> on_error /*= nullptr*/,
+    std::function<void(Writer&)> on_close /*= nullptr*/,
+    const bool text_mode /*= true*/)
 {
-    return std::unique_ptr<siesta::client::websocket::Writer>(
-        new WriterImpl(uri, reader, text_mode));
+    return std::unique_ptr<siesta::client::websocket::Writer>(new WriterImpl(
+        uri, on_message, on_open, on_error, on_close, text_mode));
 }

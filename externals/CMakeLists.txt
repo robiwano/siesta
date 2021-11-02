@@ -28,7 +28,7 @@ if (SIESTA_BUILD_TESTS)
     fetch_repo(
       googletest
       "https://github.com/google/googletest.git"
-      release-1.10.0
+      release-1.11.0
     )
     set_target_properties(
         gmock gmock_main gtest gtest_main

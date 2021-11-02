@@ -13,7 +13,8 @@ int main(int argc, char** argv)
         if (argc > 1) {
             addr = argv[1];
         }
-        auto fn_reader = [](const std::string& data) {
+        auto fn_reader = [](client::websocket::Writer&,
+                            const std::string& data) {
             std::cout << "Received: " << data << std::endl;
         };
         auto client = client::websocket::connect(addr, fn_reader);
@@ -22,7 +23,7 @@ int main(int argc, char** argv)
         while (true) {
             std::string input;
             std::getline(std::cin, input);
-            client->writeData(input);
+            client->send(input);
         }
     } catch (std::exception& e) {
         std::cerr << e.what() << std::endl;

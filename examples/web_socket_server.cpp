@@ -18,12 +18,12 @@ struct WebsocketConnection : server::websocket::Reader {
     {
         std::cout << "Stream disconnected (" << this << ")" << std::endl;
     }
-    void onReadData(const std::string& data) override
+    void onMessage(const std::string& data) override
     {
         // Just echo back received data
         std::cout << "Echoing back '" << data << "' (" << this << ")"
                   << std::endl;
-        writer.writeData(data);
+        writer.send(data);
     }
 
     // The websocket factory method

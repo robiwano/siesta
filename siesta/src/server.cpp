@@ -278,7 +278,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                 std::string data((char*)rec_buffer.data(), len);
                 startReceive();
                 try {
-                    client_->onReadData(data);
+                    client_->onMessage(data);
                 } catch (...) {
                     // TODO
                 }
@@ -291,7 +291,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             }
         }
 
-        void writeData(const std::string& data) override
+        void send(const std::string& data) override
         {
             nng_iov iov;
             iov.iov_buf = (void*)data.data();
@@ -476,9 +476,12 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             }
         };
 
-        std::map<std::string,           // Method
-                 std::map<std::string,  // Base URI
-                          std::pair<nng_http_handler*, std::map<int, route>>>>
+        using base_uri_map_t =
+            std::map<std::string,  // Base URI
+                     std::pair<nng_http_handler*, std::map<int, route>>,
+                     std::greater<std::string>>;
+        std::map<std::string,  // Method
+                 base_uri_map_t>
             routes_;
         std::map<int, std::unique_ptr<directory>> directories_;
         std::map<int, std::unique_ptr<web_socket>> websockets_;
@@ -845,6 +848,8 @@ void siesta::server::TokenHolder::operator+=(std::unique_ptr<Token> route)
 {
     routes_.push_back(std::move(route));
 }
+
+void siesta::server::TokenHolder::clear() { routes_.clear(); }
 
 namespace siesta
 {

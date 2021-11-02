@@ -11,10 +11,7 @@ namespace
     struct MySocketImpl : server::websocket::Reader {
         server::websocket::Writer& writer;
         MySocketImpl(server::websocket::Writer& w) : writer(w) {}
-        void onReadData(const std::string& data) override
-        {
-            writer.writeData(data);
-        }
+        void onMessage(const std::string& data) override { writer.send(data); }
     };
 }  // namespace
 
@@ -36,7 +33,8 @@ TEST(siesta, websocket_secure_echo)
     std::mutex m;
     std::condition_variable cv;
     std::string result;
-    auto fn_read_callback = [&](const std::string& data) {
+    auto fn_read_callback = [&](client::websocket::Writer&,
+                                const std::string& data) {
         std::lock_guard<std::mutex> lock(m);
         result = data;
         cv.notify_one();
@@ -44,7 +42,7 @@ TEST(siesta, websocket_secure_echo)
 
     EXPECT_NO_THROW(client = client::websocket::connect(
                         "wss://127.0.0.1:8080/socket", fn_read_callback));
-    EXPECT_NO_THROW(client->writeData(req_body));
+    EXPECT_NO_THROW(client->send(req_body));
 
     std::unique_lock<std::mutex> lock(m);
     EXPECT_TRUE(cv.wait_for(

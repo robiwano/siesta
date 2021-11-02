@@ -41,14 +41,18 @@ namespace siesta
             class Writer
             {
             public:
-                virtual ~Writer()                               = default;
-                virtual void writeData(const std::string& data) = 0;
+                virtual ~Writer()                          = default;
+                virtual void send(const std::string& data) = 0;
             };
 
             std::unique_ptr<Writer> connect(
                 const std::string& uri,
-                std::function<void(const std::string&)> reader,
-                const bool text_mode = true);
+                std::function<void(Writer&, const std::string&)> on_message,
+                std::function<void(Writer&)> on_open = nullptr,
+                std::function<void(Writer&, const std::string&)> on_error =
+                    nullptr,
+                std::function<void(Writer&)> on_close = nullptr,
+                const bool text_mode                  = true);
         }  // namespace websocket
     }      // namespace client
 }  // namespace siesta

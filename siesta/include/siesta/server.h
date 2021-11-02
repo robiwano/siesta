@@ -24,6 +24,7 @@ namespace siesta
 
         public:
             void operator+=(std::unique_ptr<Token> route);
+            void clear();
         };
 
         namespace rest
@@ -65,8 +66,8 @@ namespace siesta
             class Reader
             {
             public:
-                virtual ~Reader()                                = default;
-                virtual void onReadData(const std::string& data) = 0;
+                virtual ~Reader()                               = default;
+                virtual void onMessage(const std::string& data) = 0;
             };
 
             /**
@@ -75,8 +76,8 @@ namespace siesta
             class Writer
             {
             public:
-                virtual ~Writer()                               = default;
-                virtual void writeData(const std::string& data) = 0;
+                virtual ~Writer()                          = default;
+                virtual void send(const std::string& data) = 0;
             };
 
             /** Websocket handler factory type */
