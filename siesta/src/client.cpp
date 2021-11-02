@@ -276,6 +276,8 @@ namespace
             nng_aio_cancel(aio_dialer);
             nng_aio_cancel(aio_read);
             nng_aio_cancel(aio_write);
+            nng_aio_wait(aio_read);
+            nng_aio_wait(aio_write);
             nng_stream_dialer_close(dialer);
         }
 
@@ -290,7 +292,7 @@ namespace
         {
             int rv = nng_aio_result(aio_read);
             if (rv != 0) {
-                if (rv == NNG_ECLOSED) {
+                if (rv == NNG_ECLOSED || rv == NNG_ECANCELED) {
                     if (on_close) {
                         on_close(*this);
                     }

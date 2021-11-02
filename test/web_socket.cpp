@@ -129,7 +129,49 @@ TEST(siesta, websocket_max_two_clients)
                         "ws://127.0.0.1:8080/socket", fn_read_callback));
 }
 
-TEST(siesta, websocket_open_close)
+TEST(siesta, websocket_open_close_client)
+{
+    std::shared_ptr<server::Server> server;
+    EXPECT_NO_THROW(server = server::createServer("http://127.0.0.1:8080"));
+    EXPECT_NO_THROW(server->start());
+
+    server::TokenHolder holder;
+    EXPECT_NO_THROW(holder += server->addTextWebsocket(
+                        "/socket", [](server::websocket::Writer& w) {
+                            return new MySocketImpl(w);
+                        }));
+
+    std::unique_ptr<client::websocket::Writer> client;
+
+    bool open_called  = false;
+    bool close_called = false;
+
+    auto fn_open_callback = [&](client::websocket::Writer&) {
+        open_called = true;
+    };
+    auto fn_read_callback  = [&](client::websocket::Writer&,
+                                const std::string& data) {};
+    auto fn_error_callback = [&](client::websocket::Writer&,
+                                 const std::string& error) {};
+    auto fn_close_callback = [&](client::websocket::Writer&) {
+        close_called = true;
+    };
+
+    EXPECT_NO_THROW(client =
+                        client::websocket::connect("ws://127.0.0.1:8080/socket",
+                                                   fn_read_callback,
+                                                   fn_open_callback,
+                                                   fn_error_callback,
+                                                   fn_close_callback));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    EXPECT_TRUE(open_called);
+
+    // This will close the websocket from the client side
+    client = nullptr;
+    EXPECT_TRUE(close_called);
+}
+
+TEST(siesta, websocket_open_close_server)
 {
     std::shared_ptr<server::Server> server;
     EXPECT_NO_THROW(server = server::createServer("http://127.0.0.1:8080"));
