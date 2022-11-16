@@ -85,14 +85,16 @@ namespace siesta
         std::string reason_;
 
     public:
-        Exception(HttpStatus status, const std::string& reason = "")
+        explicit Exception(HttpStatus status, const std::string& reason = "")
             : status_(status), reason_(reason)
         {
         }
 
+        ~Exception() _NOEXCEPT = default;
+
         HttpStatus status() const { return status_; }
         bool has_reason() const { return !reason_.empty(); }
-        const char* what() const noexcept override { return reason_.c_str(); }
+        const char* what() const _NOEXCEPT override { return reason_.c_str(); }
     };
 
     template <class nng_type,

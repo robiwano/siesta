@@ -41,7 +41,7 @@ foreach(E ${EXAMPLE_SRC})
     target_include_directories(${EXAMPLE_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(${EXAMPLE_NAME} siesta ghc_filesystem ctrl_c_handler)
     set_target_properties(${EXAMPLE_NAME}
-        PROPERTIES
+        PROPERTIES CXX_STANDARD 11
         FOLDER "Examples"
     )
 endforeach()

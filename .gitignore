@@ -47,3 +47,7 @@
 /externals/INSTALL.vcxproj.filters
 /externals/INSTALL.vcxproj
 /externals/cmake_install.cmake
+
+# Clion IDE files
+**/.idea/
+**/cmake-build-*/
