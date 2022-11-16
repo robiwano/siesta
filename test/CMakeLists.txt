@@ -2,7 +2,7 @@ set(
     TEST_SRC
     rest_server
     http_client
-    multiple_servers
+    #multiple_servers ### this file does not exist
     serve_directory
     web_socket
 )
@@ -31,5 +31,14 @@ foreach(T ${TEST_SRC})
         FOLDER "Tests"
     )
 
+    set_target_properties(${TEST_NAME}
+            PROPERTIES
+            CXX_STANDARD 11)
+
     add_test(NAME ${T} COMMAND ${TEST_NAME})
+
+    set_target_properties(siesta
+            PROPERTIES
+            CXX_STANDARD 11
+            )
 endforeach()
