@@ -6,6 +6,10 @@
 #define NO_DISCARD
 #endif
 
+#ifndef _NOEXCEPT
+#define _NOEXCEPT
+#endif
+
 namespace siesta
 {
     enum class HttpMethod {

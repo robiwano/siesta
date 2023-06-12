@@ -18,7 +18,7 @@ namespace
 TEST(siesta, websocket_echo)
 {
     std::shared_ptr<server::Server> server;
-    EXPECT_NO_THROW(server = server::createServer("http://127.0.0.1:8080"));
+    EXPECT_NO_THROW(server = server::createServer("http://127.0.0.1:8080", true));
     EXPECT_NO_THROW(server->start());
 
     server::TokenHolder holder;
@@ -53,7 +53,7 @@ TEST(siesta, websocket_echo)
 TEST(siesta, websocket_one_client_only)
 {
     std::shared_ptr<server::Server> server;
-    EXPECT_NO_THROW(server = server::createServer("http://127.0.0.1:8080"));
+    EXPECT_NO_THROW(server = server::createServer("http://127.0.0.1:8080", true));
     EXPECT_NO_THROW(server->start());
 
     server::TokenHolder holder;
@@ -89,7 +89,7 @@ TEST(siesta, websocket_one_client_only)
 TEST(siesta, websocket_max_two_clients)
 {
     std::shared_ptr<server::Server> server;
-    EXPECT_NO_THROW(server = server::createServer("http://127.0.0.1:8080"));
+    EXPECT_NO_THROW(server = server::createServer("http://127.0.0.1:8080", true));
     EXPECT_NO_THROW(server->start());
 
     server::TokenHolder holder;
@@ -132,7 +132,7 @@ TEST(siesta, websocket_max_two_clients)
 TEST(siesta, websocket_open_close_client)
 {
     std::shared_ptr<server::Server> server;
-    EXPECT_NO_THROW(server = server::createServer("http://127.0.0.1:8080"));
+    EXPECT_NO_THROW(server = server::createServer("http://127.0.0.1:8080", true));
     EXPECT_NO_THROW(server->start());
 
     server::TokenHolder holder;
@@ -174,7 +174,7 @@ TEST(siesta, websocket_open_close_client)
 TEST(siesta, websocket_open_close_server)
 {
     std::shared_ptr<server::Server> server;
-    EXPECT_NO_THROW(server = server::createServer("http://127.0.0.1:8080"));
+    EXPECT_NO_THROW(server = server::createServer("http://127.0.0.1:8080", true));
     EXPECT_NO_THROW(server->start());
 
     server::TokenHolder holder;

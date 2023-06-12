@@ -218,16 +218,19 @@ zFX5yAtcD5BnoPBo0CE5y/I=
         nng_stream* s_;
         std::unique_ptr<websocket::Reader> client_;
         std::vector<uint8_t> rec_buffer;
+        const bool callback_on_new_thread_;
 
         using Disposer = std::function<void(StreamInternalImpl*)>;
         Disposer disposer_;
         StreamInternalImpl(websocket::Factory factory,
                            nng_stream* s,
-                           Disposer fn_dispose)
+                           Disposer fn_dispose,
+                           bool callback_on_new_thread)
             : aio_read_(nullptr)
             , rec_buffer(32768)
             , s_(s)
             , disposer_(fn_dispose)
+            , callback_on_new_thread_(callback_on_new_thread)
         {
             int rv;
             if ((rv = nng_aio_alloc(
@@ -278,7 +281,13 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                 std::string data((char*)rec_buffer.data(), len);
                 startReceive();
                 try {
-                    client_->onMessage(data);
+                    if (callback_on_new_thread_) {
+                        auto f = std::async(std::launch::async,
+                                            [&] { client_->onMessage(data); });
+                        f.get();
+                    } else {
+                        client_->onMessage(data);
+                    }
                 } catch (...) {
                     // TODO
                 }
@@ -316,6 +325,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
         nng_smart_ptr<nng_http_server> server_{nng_http_server_release};
         nng_smart_ptr<nng_tls_config> tls_cfg_{nng_tls_config_free};
         bool started_{false};
+        const bool callback_on_new_thread_{false};
 
         struct route {
             std::regex reg_exp;
@@ -360,19 +370,22 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             std::string path_;
             const bool text_mode_;
             const size_t max_num_connections_;
+            const bool callback_on_new_thread_;
 
             web_socket(const nng_url* base_url,
                        const std::string& path,
                        websocket::Factory f,
                        std::recursive_mutex& m,
                        const bool text_mode,
-                       const size_t max_num_connections)
+                       const size_t max_num_connections,
+                       const bool callback_on_new_thread)
                 : base_url_(base_url)
                 , path_(path)
                 , factory(f)
                 , mtx(m)
                 , text_mode_(text_mode)
                 , max_num_connections_(max_num_connections)
+                , callback_on_new_thread_(callback_on_new_thread)
             {
                 int rv;
                 if ((rv = nng_aio_alloc(
@@ -461,7 +474,9 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                     auto id = streams.empty() ? 1 : streams.rbegin()->first + 1;
                     auto impl = std::unique_ptr<
                         StreamInternalImpl>(new StreamInternalImpl(
-                        factory, stream, [id, this](StreamInternalImpl*) {
+                        factory,
+                        stream,
+                        [id, this](StreamInternalImpl*) {
                             dispose_job = std::async(std::launch::async, [=] {
                                 std::lock_guard<std::recursive_mutex> lock(mtx);
                                 streams.erase(id);
@@ -469,7 +484,8 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                                     startListening();
                                 }
                             });
-                        }));
+                        },
+                        callback_on_new_thread_));
                     streams.insert(std::make_pair(id, std::move(impl)));
                 } catch (std::exception&) {
                 }
@@ -489,7 +505,9 @@ zFX5yAtcD5BnoPBo0CE5y/I=
         nng_smart_ptr<nng_url> url_{nng_url_free};
 
     public:
-        ServerImpl(const std::string& address)
+        ServerImpl(const std::string& address,
+                   const bool callback_on_new_thread)
+            : callback_on_new_thread_(callback_on_new_thread)
         {
             int rv;
             if ((rv = nng_url_parse(&url_, address.c_str())) != 0) {
@@ -613,9 +631,9 @@ zFX5yAtcD5BnoPBo0CE5y/I=
 
             auto& handler_map = uri_it->second;
             auto id           = handler_map.second.empty()
-                          ? 1
-                          : handler_map.second.rbegin()->first + 1;
-            auto pThis = shared_from_this();
+                                    ? 1
+                                    : handler_map.second.rbegin()->first + 1;
+            auto pThis        = shared_from_this();
 
             route r;
             std::string uri_re = uri;
@@ -657,9 +675,15 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             const size_t max_num_connections /*= 0 */)
         {
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
-            auto socket = std::unique_ptr<web_socket>(new web_socket(
-                url_, uri, factory, handler_mutex_, true, max_num_connections));
-            auto pThis  = shared_from_this();
+            auto socket = std::unique_ptr<web_socket>(
+                new web_socket(url_,
+                               uri,
+                               factory,
+                               handler_mutex_,
+                               true,
+                               max_num_connections,
+                               callback_on_new_thread_));
+            auto pThis = shared_from_this();
             const auto id =
                 websockets_.empty() ? 1 : websockets_.rbegin()->first + 1;
             websockets_.emplace(std::make_pair(id, std::move(socket)));
@@ -679,7 +703,8 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                                factory,
                                handler_mutex_,
                                false,
-                               max_num_connections));
+                               max_num_connections,
+                               callback_on_new_thread_));
             auto pThis = shared_from_this();
             const auto id =
                 websockets_.empty() ? 1 : websockets_.rbegin()->first + 1;
@@ -833,7 +858,17 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                             }
                             lock.unlock();
                             ResponseImpl resp(response);
-                            (entry.second.handler)(req, resp);
+                            if (callback_on_new_thread_) {
+                                // Call handler within future since threads
+                                // created by nng have rather small stack
+                                // size...
+                                auto f = std::async(std::launch::async, [&] {
+                                    (entry.second.handler)(req, resp);
+                                });
+                                f.get();
+                            } else {
+                                (entry.second.handler)(req, resp);
+                            }
                             return true;
                         }
                     }
@@ -856,10 +891,11 @@ namespace siesta
     namespace server
     {
         std::shared_ptr<siesta::server::Server> createServer(
-            const std::string& address)
+            const std::string& address,
+            const bool callback_on_new_thread /*= false*/)
         {
-            return std::make_shared<ServerImpl>(address);
+            return std::make_shared<ServerImpl>(address,
+                                                callback_on_new_thread);
         }
-
     }  // namespace server
 }  // namespace siesta

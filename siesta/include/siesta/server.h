@@ -176,10 +176,15 @@ namespace siesta
         /**
          * Create a server instance
          *
-         * @param address   Address, f.i. "http://127.0.0.1/9080"
+         * @param address                   Address, f.i.
+         * "http://127.0.0.1/9080"
+         * @param callback_on_new_thread    If true, callbacks are done on a new
+         * thread, and not on the nng thread (which has limited stack size)
          * @returns A server instance
          */
-        std::shared_ptr<Server> createServer(const std::string& address);
+        std::shared_ptr<Server> createServer(
+            const std::string& address,
+            const bool callback_on_new_thread = true);
 
     }  // namespace server
 }  // namespace siesta
