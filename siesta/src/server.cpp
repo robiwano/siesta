@@ -7,6 +7,7 @@
 #include <nng/transport/tls/tls.h>
 #include <siesta/server.h>
 
+#include <cstring>
 #include <future>
 #include <iostream>
 #include <mutex>
