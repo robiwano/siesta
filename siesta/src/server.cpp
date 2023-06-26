@@ -673,7 +673,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
         std::unique_ptr<Token> addTextWebsocket(
             const std::string& uri,
             websocket::Factory factory,
-            const size_t max_num_connections /*= 0 */)
+            const size_t max_num_connections /*= 0 */) override
         {
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
             auto socket = std::unique_ptr<web_socket>(
@@ -695,7 +695,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
         std::unique_ptr<Token> addBinaryWebsocket(
             const std::string& uri,
             websocket::Factory factory,
-            const size_t max_num_connections /*= 0 */)
+            const size_t max_num_connections /*= 0 */) override
         {
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
             auto socket = std::unique_ptr<web_socket>(
