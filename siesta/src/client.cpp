@@ -10,6 +10,14 @@
 using namespace siesta;
 using namespace siesta::client;
 
+#define nng_call(method, ...)         \
+    {                                 \
+        int rv = method(__VA_ARGS__); \
+        if (rv != 0) {                \
+            fatal(#method, rv);       \
+        }                             \
+    }
+
 namespace
 {
     static void fatal(const std::string& msg, int rv)
@@ -26,61 +34,28 @@ namespace
         const int timeout_ms)
     {
         auto f = std::async(std::launch::async, [=]() -> std::string {
-            int rv;
-            static const char* method_str[] = {
-                "POST",
-                "PUT",
-                "GET",
-                "PATCH",
-                "DELETE",
-            };
-
             nng_smart_ptr<nng_url> url(nng_url_free);
-            if ((rv = nng_url_parse(&url, address.c_str())) != 0) {
-                fatal("Failed to parse address", rv);
-            }
+            nng_call(nng_url_parse, &url, address.c_str());
 
             nng_smart_ptr<nng_http_client> client(nng_http_client_free);
-            if ((rv = nng_http_client_alloc(&client, url)) != 0) {
-                fatal("Failed to alloc http client", rv);
-            }
+            nng_call(nng_http_client_alloc, &client, url);
 
             nng_smart_ptr<nng_tls_config> tls(nng_tls_config_free);
             if (strcmp(url->u_scheme, "https") == 0) {
-                if ((rv = nng_tls_config_alloc(&tls, NNG_TLS_MODE_CLIENT)) !=
-                    0) {
-                    fatal("nng_tls_config_alloc", rv);
-                }
-
-                if ((rv = nng_tls_config_server_name(tls, url->u_hostname)) !=
-                    0) {
-                    fatal("nng_tls_config_server_name", rv);
-                }
-
-                if ((rv = nng_tls_config_auth_mode(
-                         tls, NNG_TLS_AUTH_MODE_NONE)) != 0) {
-                    fatal("nng_tls_config_alloc", rv);
-                }
-
-                if ((rv = nng_http_client_set_tls(client, tls)) != 0) {
-                    fatal("nng_http_client_set_tls", rv);
-                }
+                nng_call(nng_tls_config_alloc, &tls, NNG_TLS_MODE_CLIENT);
+                nng_call(nng_tls_config_server_name, tls, url->u_hostname);
+                nng_call(nng_tls_config_auth_mode, tls, NNG_TLS_AUTH_MODE_NONE);
+                nng_call(nng_http_client_set_tls, client, tls);
             }
 
             nng_smart_ptr<nng_http_req> req(nng_http_req_free);
-            if ((rv = nng_http_req_alloc(&req, url)) != 0) {
-                fatal("Failed to alloc http request", rv);
-            }
+            nng_call(nng_http_req_alloc, &req, url);
 
             nng_smart_ptr<nng_http_res> res(nng_http_res_free);
-            if ((rv = nng_http_res_alloc(&res)) != 0) {
-                fatal("Failed to alloc http response", rv);
-            }
+            nng_call(nng_http_res_alloc, &res);
 
             nng_smart_ptr<nng_aio> aio(nng_aio_free);
-            if ((rv = nng_aio_alloc(&aio, NULL, NULL)) != 0) {
-                fatal("Failed to alloc aio object", rv);
-            }
+            nng_call(nng_aio_alloc, &aio, NULL, NULL);
 
             nng_aio_set_timeout(
                 aio, timeout_ms >= 0 ? timeout_ms : NNG_DURATION_DEFAULT);
@@ -90,9 +65,7 @@ namespace
 
             // Wait for it to finish.
             nng_aio_wait(aio);
-            if ((rv = nng_aio_result(aio)) != 0) {
-                fatal("Failed getting aio object result", rv);
-            }
+            nng_call(nng_aio_result, aio);
 
             nng_aio_set_timeout(aio, NNG_DURATION_DEFAULT);
             // Get the connection, at the 0th output.
@@ -100,30 +73,25 @@ namespace
 
             // Request is already set up with URL, and for GET via HTTP/1.1.
             // The Host: header is already set up too.
-            if ((rv = nng_http_req_set_method(req, method_str[int(method)])) !=
-                0) {
-                fatal("Failed setting method", rv);
-            }
+            nng_call(
+                nng_http_req_set_method, req, method_to_string(method).c_str());
 
             if (!body.empty()) {
-                if ((rv = nng_http_req_set_data(
-                         req, body.data(), body.length())) != 0) {
-                    fatal("Failed setting request data", rv);
-                }
+                nng_call(
+                    nng_http_req_set_data, req, body.data(), body.length());
                 if (!content_type.empty()) {
-                    if ((rv = nng_http_req_add_header(
-                             req, "content-type", content_type.c_str())) != 0) {
-                        fatal("Failed setting content type header", rv);
-                    }
+                    nng_call(nng_http_req_add_header,
+                             req,
+                             "content-type",
+                             content_type.c_str());
                 }
             }
             if (!header.empty()) {
                 for (auto& key : header) {
-                    if ((rv = nng_http_req_add_header(
-                             req, (key.first).c_str(), (key.second).c_str())) !=
-                        0) {
-                        fatal("Failed setting content type header", rv);
-                    }
+                    nng_call(nng_http_req_add_header,
+                             req,
+                             (key.first).c_str(),
+                             (key.second).c_str());
                 }
             }
 
@@ -133,17 +101,13 @@ namespace
             nng_http_conn_write_req(conn, req, aio);
             nng_aio_wait(aio);
 
-            if ((rv = nng_aio_result(aio)) != 0) {
-                fatal("Failed getting aio object result", rv);
-            }
+            nng_call(nng_aio_result, aio);
 
             // Read a response.
             nng_http_conn_read_res(conn, res, aio);
             nng_aio_wait(aio);
 
-            if ((rv = nng_aio_result(aio)) != 0) {
-                fatal("Failed getting aio object result", rv);
-            }
+            nng_call(nng_aio_result, aio);
 
             std::string r;
             if (nng_http_res_get_status(res) != NNG_HTTP_STATUS_OK) {
@@ -179,9 +143,7 @@ namespace
                     // Wait for it to complete.
                     nng_aio_wait(aio);
 
-                    if ((rv = nng_aio_result(aio)) != 0) {
-                        fatal("Failed getting aio object result", rv);
-                    }
+                    nng_call(nng_aio_result, aio);
                 }
             }
             return r;

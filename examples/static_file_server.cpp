@@ -39,7 +39,7 @@ function send()
         TempFile(const std::string& file_name, const void* content, size_t size)
         {
             auto tmp_path = fs::temp_directory_path();
-            workdir       = tmp_path / "serve_directory";
+            workdir       = tmp_path / "siesta_serve_directory";
             file          = workdir / fs::path(file_name);
             auto parent   = file.parent_path();
             if (!fs::exists(parent)) {
@@ -51,10 +51,8 @@ function send()
         }
         ~TempFile()
         {
-            while (!fs::equivalent(file, fs::temp_directory_path())) {
-                fs::remove(file);
-                file = file.parent_path();
-            }
+            std::error_code ec;
+            fs::remove_all(file.parent_path(), ec);
         }
         std::string path() const
         {

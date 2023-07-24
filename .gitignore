@@ -1,52 +1,6 @@
 ﻿################################################################################
-# Ce fichier .gitignore a été automatiquement créé par Microsoft(R) Visual Studio.
-################################################################################
-
-/.vs/siesta/v16
-/bin/Debug
-/CMakeFiles
-/docs
-/examples
-/externals/CMakeFiles
-/lib/Debug
-/siesta/CMakeFiles
-/siesta/Debug
-/siesta/siesta.dir/Debug
-/siesta/cmake_install.cmake
-/siesta/siesta.vcxproj.filters
-/siesta/siesta.vcxproj
-/siesta/RUN_TESTS.vcxproj.filters
-/siesta/RUN_TESTS.vcxproj
-/siesta/PACKAGE.vcxproj.filters
-/siesta/PACKAGE.vcxproj
-/siesta/INSTALL.vcxproj.filters
-/siesta/INSTALL.vcxproj
-/test
-/x64/Debug
-/_deps
-/ZERO_CHECK.vcxproj.filters
-/ZERO_CHECK.vcxproj
-/siesta.sln
-/RUN_TESTS.vcxproj.filters
-/RUN_TESTS.vcxproj
-/PACKAGE.vcxproj.filters
-/PACKAGE.vcxproj
-/INSTALL.vcxproj.filters
-/INSTALL.vcxproj
-/CTestTestfile.cmake
-/CPackSourceConfig.cmake
-/CPackConfig.cmake
-/cmake_install.cmake
-/CMakeCache.txt
-/ALL_BUILD.vcxproj.filters
-/ALL_BUILD.vcxproj
-/externals/RUN_TESTS.vcxproj
-/externals/RUN_TESTS.vcxproj.filters
-/externals/PACKAGE.vcxproj.filters
-/externals/PACKAGE.vcxproj
-/externals/INSTALL.vcxproj.filters
-/externals/INSTALL.vcxproj
-/externals/cmake_install.cmake
+# Visual studio IDE files
+/.vs
 
 # Clion IDE files
 **/.idea/

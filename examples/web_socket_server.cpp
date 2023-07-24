@@ -8,9 +8,15 @@ using namespace siesta;
 
 #include "ctrl_c_handler.h"
 
+// Dummy struct to show how to supply a websocket connection with an "owner"
+struct WebsocketData {
+};
+
 struct WebsocketConnection : server::websocket::Reader {
+    WebsocketData& owner;
     server::websocket::Writer& writer;
-    WebsocketConnection(server::websocket::Writer& w) : writer(w)
+    WebsocketConnection(WebsocketData& owner, server::websocket::Writer& w)
+        : owner(owner), writer(w)
     {
         std::cout << "Stream connected (" << this << ")" << std::endl;
     }
@@ -27,9 +33,10 @@ struct WebsocketConnection : server::websocket::Reader {
     }
 
     // The websocket factory method
-    static server::websocket::Reader* create(server::websocket::Writer& w)
+    static server::websocket::Reader* create(WebsocketData& owner,
+                                             server::websocket::Writer& w)
     {
-        return new WebsocketConnection(w);
+        return new WebsocketConnection(owner, w);
     }
 };
 
@@ -47,8 +54,12 @@ int main(int argc, char** argv)
             std::cout << "Server started, listening on port " << server->port()
                       << std::endl;
 
+            WebsocketData my_data;
             auto token =
-                server->addTextWebsocket("/test", WebsocketConnection::create);
+                server->addTextWebsocket("/test",
+                                         std::bind(&WebsocketConnection::create,
+                                                   my_data,
+                                                   std::placeholders::_1));
 
             while (!ctrlc::signalled()) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));

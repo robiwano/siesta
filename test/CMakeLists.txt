@@ -2,7 +2,7 @@ set(
     TEST_SRC
     rest_server
     http_client
-    #multiple_servers ### this file does not exist
+    multiple_servers
     serve_directory
     web_socket
 )

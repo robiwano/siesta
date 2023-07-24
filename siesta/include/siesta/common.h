@@ -17,7 +17,8 @@ namespace siesta
         PUT,
         GET,
         PATCH,
-        DEL,
+        DEL,  // Instead of DELETE as it conflicts with Windows defines
+        OPTIONS,
         Method_COUNT_DO_NOT_USE,
     };
 
@@ -82,6 +83,9 @@ namespace siesta
         NOT_EXTENDED             = 510,
         NETWORK_AUTH_REQUIRED    = 511,
     };
+
+    std::string method_to_string(const HttpMethod method);
+    HttpMethod string_to_method(const std::string& method);
 
     class Exception : public std::exception
     {
