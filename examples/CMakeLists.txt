@@ -19,6 +19,7 @@ set(
     rest_client
     rest_server
     static_file_server
+    static_file_server_cors
     web_socket_client
     web_socket_server
 )

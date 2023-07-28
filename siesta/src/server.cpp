@@ -104,18 +104,6 @@ lAk2Ntrke1HbpUXT4Y5rDmMpW/DYzh+wuaJutHqWWz79QVyHKETLnCJZ1rMoQ2Sv
 zFX5yAtcD5BnoPBo0CE5y/I=
 -----END PRIVATE KEY-----)";
 
-    static const char* method_str[] = {
-        "POST",
-        "PUT",
-        "GET",
-        "PATCH",
-        "DELETE",
-    };
-    constexpr auto method_str_cnt = int(HttpMethod::Method_COUNT_DO_NOT_USE);
-    static_assert((sizeof(method_str) / sizeof(method_str[0])) ==
-                      method_str_cnt,
-                  "Length mismatch");
-
     static void fatal(const char* what, int rv)
     {
         std::stringstream ss;
@@ -139,13 +127,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
         const HttpMethod getMethod() const override
         {
             auto m = nng_http_req_get_method(req_);
-            for (int i = 0; i < method_str_cnt; ++i) {
-                if (strcmp(m, method_str[i]) == 0) {
-                    return static_cast<HttpMethod>(i);
-                }
-            }
-            throw std::runtime_error("non recognized method: " +
-                                     std::string(m));
+            return string_to_method(m);
         }
 
         const std::map<std::string, std::string>& getUriParameters()
@@ -585,8 +567,8 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                                         rest::Handler handler) override
         {
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
-            auto m_str       = method_str[int(method)];
-            auto& method_map = routes_[m_str];
+            auto method_str  = method_to_string(method);
+            auto& method_map = routes_[method_str];
             auto base_uri    = uri;
             auto p           = base_uri.find_first_of(".:");
             if (p != std::string::npos) {
@@ -610,7 +592,8 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                     0) {
                     fatal("nng_http_handler_set_data", rv);
                 }
-                if ((rv = nng_http_handler_set_method(handler, m_str)) != 0) {
+                if ((rv = nng_http_handler_set_method(
+                         handler, method_str.c_str())) != 0) {
                     fatal("nng_http_handler_set_method", rv);
                 }
                 // We want to collect the body, and we (arbitrarily) limit this
@@ -651,8 +634,8 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             r.handler = handler;
             handler_map.second.insert(std::make_pair(id, r));
             return std::unique_ptr<Token>(
-                new RouteTokenImpl([pThis, m_str, base_uri, id] {
-                    pThis->removeRoute(m_str, base_uri.c_str(), id);
+                new RouteTokenImpl([pThis, method_str, base_uri, id] {
+                    pThis->removeRoute(method_str.c_str(), base_uri.c_str(), id);
                 }));
         }
 
@@ -889,6 +872,42 @@ void siesta::server::TokenHolder::clear() { routes_.clear(); }
 
 namespace siesta
 {
+    std::string method_to_string(const HttpMethod method)
+    {
+        switch (method) {
+        case HttpMethod::POST:
+            return "POST";
+        case HttpMethod::PUT:
+            return "PUT";
+        case HttpMethod::GET:
+            return "GET";
+        case HttpMethod::PATCH:
+            return "PATCH";
+        case HttpMethod::DEL:
+            return "DELETE";
+        case HttpMethod::OPTIONS:
+            return "OPTIONS";
+        case HttpMethod::Method_COUNT_DO_NOT_USE:
+            break;
+        default:
+            break;
+        }
+        throw std::runtime_error("method not found");
+    }
+
+    HttpMethod string_to_method(const std::string& method)
+    {
+        static const char* method_str[] = {
+            "POST", "PUT", "GET", "PATCH", "DELETE", "OPTIONS"};
+        for (size_t i = 0; i < sizeof(method_str) / sizeof(method_str[0]);
+             ++i) {
+            if (method == method_str[i]) {
+                return static_cast<HttpMethod>(i);
+            }
+        }
+        throw std::runtime_error("method '" + method + "' not found");
+    }
+
     namespace server
     {
         std::shared_ptr<siesta::server::Server> createServer(
