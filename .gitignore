@@ -5,3 +5,6 @@
 # Clion IDE files
 **/.idea/
 **/cmake-build-*/
+
+# README states creating build directory in repo base folder
+build/
