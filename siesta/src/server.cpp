@@ -624,10 +624,23 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             // Parse URI parameters (starting with ':')
             const std::regex re_param(":([^/]+)");
             std::smatch m;
-            while (std::regex_search(uri_re, m, re_param)) {
+            while (std::regex_search(uri_re, m, re_param) && m.size() > 1) {
                 r.uri_param_key.push_back(m[1].str());
-                uri_re.replace(
-                    m[0].first - uri_re.begin(), m[0].length(), "([^/]+)");
+
+                // Compute the position of the match within uri_re using
+                // const_iterator to avoid type mismatch errors between const
+                // and non-const iterators. This is particularly important on
+                // ARM platforms, where the standard library (e.g., libstdc++)
+                // enforces stricter type checks and may represent iterators
+                // differently. Avoid subtracting iterators directly, as it may
+                // lead to undefined behavior if the iterator types don't match
+                // exactly or the source string differs.
+                auto pos = std::distance(uri_re.cbegin(), m[0].first);
+
+                // Replace the matched parameter (e.g., ":param-id") with a
+                // regex group that matches any non-slash segment, allowing for
+                // dynamic route matching.
+                uri_re.replace(pos, m[0].length(), "([^/]+)");
             }
             std::regex re(uri_re);
             r.reg_exp = std::move(re);
@@ -635,7 +648,8 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             handler_map.second.insert(std::make_pair(id, r));
             return std::unique_ptr<Token>(
                 new RouteTokenImpl([pThis, method_str, base_uri, id] {
-                    pThis->removeRoute(method_str.c_str(), base_uri.c_str(), id);
+                    pThis->removeRoute(
+                        method_str.c_str(), base_uri.c_str(), id);
                 }));
         }
 
