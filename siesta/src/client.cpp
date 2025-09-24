@@ -68,8 +68,10 @@ namespace
             nng_call(nng_aio_result, aio);
 
             nng_aio_set_timeout(aio, NNG_DURATION_DEFAULT);
-            // Get the connection, at the 0th output.
-            auto conn = (nng_http_conn*)nng_aio_get_output(aio, 0);
+            // Get the connection, at the 0th output. Note that nng doesn't close the
+            // connection, so let a smart pointer wrap it.
+            nng_smart_ptr<nng_http_conn> conn(nng_http_conn_close);
+            conn = (nng_http_conn*)nng_aio_get_output(aio, 0);
 
             // Request is already set up with URL, and for GET via HTTP/1.1.
             // The Host: header is already set up too.
