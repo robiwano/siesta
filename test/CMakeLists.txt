@@ -31,14 +31,5 @@ foreach(T ${TEST_SRC})
         FOLDER "Tests"
     )
 
-    set_target_properties(${TEST_NAME}
-            PROPERTIES
-            CXX_STANDARD 11)
-
     add_test(NAME ${T} COMMAND ${TEST_NAME})
-
-    set_target_properties(siesta
-            PROPERTIES
-            CXX_STANDARD 11
-            )
 endforeach()
