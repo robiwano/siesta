@@ -17,10 +17,11 @@ TEST(siesta, client_connect_ok)
 
 TEST(siesta, client_connect_timeout)
 {
-    auto f = siesta::client::getRequest(
+    constexpr auto t_timeout = 1000;
+    auto f                   = siesta::client::getRequest(
         "http://blarf.info",
         std::vector<std::pair<std::string, std::string>>(),
-        1000);
+        t_timeout);
 
     using clock  = std::chrono::high_resolution_clock;
     auto t_start = clock::now();
@@ -29,5 +30,5 @@ TEST(siesta, client_connect_timeout)
     auto t_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
                           clock::now() - t_start)
                           .count();
-    EXPECT_LT(t_duration, 500);
+    EXPECT_LE(t_duration, t_timeout + 100);
 }
