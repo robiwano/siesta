@@ -5,6 +5,7 @@
 
 #include <string.h>
 
+#include <sstream>
 #include <vector>
 
 using namespace siesta;
@@ -68,8 +69,8 @@ namespace
             nng_call(nng_aio_result, aio);
 
             nng_aio_set_timeout(aio, NNG_DURATION_DEFAULT);
-            // Get the connection, at the 0th output. Note that nng doesn't close the
-            // connection, so let a smart pointer wrap it.
+            // Get the connection, at the 0th output. Note that nng doesn't
+            // close the connection, so let a smart pointer wrap it.
             nng_smart_ptr<nng_http_conn> conn(nng_http_conn_close);
             conn = (nng_http_conn*)nng_aio_get_output(aio, 0);
 
@@ -153,12 +154,24 @@ namespace
         return f;
     }
 
+    static void aio_stop_and_free(nng_aio* aio)
+    {
+        nng_aio_stop(aio);
+        nng_aio_free(aio);
+    }
+
+    static void dialer_close_and_free(nng_stream_dialer* dialer)
+    {
+        nng_stream_dialer_close(dialer);
+        nng_stream_dialer_free(dialer);
+    }
+
     struct WriterImpl : siesta::client::websocket::Writer {
         nng_smart_ptr<nng_tls_config> tls{nng_tls_config_free};
-        nng_smart_ptr<nng_stream_dialer> dialer{nng_stream_dialer_free};
-        nng_smart_ptr<nng_aio> aio_dialer{nng_aio_free};
-        nng_smart_ptr<nng_aio> aio_read{nng_aio_free};
-        nng_smart_ptr<nng_aio> aio_write{nng_aio_free};
+        nng_smart_ptr<nng_stream_dialer> dialer{dialer_close_and_free};
+        nng_smart_ptr<nng_aio> aio_dialer{aio_stop_and_free};
+        nng_smart_ptr<nng_aio> aio_read{aio_stop_and_free};
+        nng_smart_ptr<nng_aio> aio_write{aio_stop_and_free};
         nng_smart_ptr<nng_stream> stream{nng_stream_free};
         std::vector<uint8_t> buffer;
         std::function<void(Writer&, const std::string&)> on_message;
@@ -227,7 +240,9 @@ namespace
             nng_aio_wait(aio_dialer);
             rv = nng_aio_result(aio_dialer);
             if (rv != 0) {
-                fatal("dial", rv);
+                std::stringstream msg;
+                msg << "dial (" << address << ")";
+                fatal(msg.str(), rv);
             }
             stream = (nng_stream*)nng_aio_get_output(aio_dialer, 0);
             if (on_open) {
@@ -237,11 +252,9 @@ namespace
         }
         ~WriterImpl()
         {
-            nng_aio_cancel(aio_dialer);
-            nng_aio_cancel(aio_read);
-            nng_aio_cancel(aio_write);
-            nng_aio_wait(aio_read);
-            nng_aio_wait(aio_write);
+            nng_aio_stop(aio_read);
+            nng_aio_stop(aio_write);
+            nng_aio_stop(aio_dialer);
             nng_stream_dialer_close(dialer);
         }
 
