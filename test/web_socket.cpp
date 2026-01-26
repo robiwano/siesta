@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
+
 #include <siesta/client.h>
 #include <siesta/server.h>
+
+#include <nng/nng.h>
 
 #include <thread>
 
@@ -8,21 +11,53 @@ using namespace siesta;
 
 namespace
 {
+    constexpr auto num_nng_threads = 4;
+
+    struct setup_nng {
+        setup_nng()
+        {
+            nng_init_set_parameter(NNG_INIT_NUM_TASK_THREADS, num_nng_threads);
+            nng_init_set_parameter(NNG_INIT_NUM_EXPIRE_THREADS,
+                                   num_nng_threads);
+            nng_init_set_parameter(NNG_INIT_NUM_POLLER_THREADS,
+                                   num_nng_threads);
+        }
+    };
+
+    static setup_nng _init_nng;
+
     // This object will be created when a client connects to the websocket
     // and destroyed when disconnected.
     struct MySocketImpl : server::websocket::Reader {
         server::websocket::Writer& writer;
-        MySocketImpl(server::websocket::Writer& w) : writer(w) {}
+        std::atomic<bool>* destructor_called_;
+        MySocketImpl(server::websocket::Writer& w,
+                     std::atomic<bool>* destructor_called = nullptr)
+            : writer(w), destructor_called_(destructor_called)
+        {
+        }
+        ~MySocketImpl()
+        {
+            if (destructor_called_) {
+                *destructor_called_ = true;
+            }
+        }
         void onMessage(const std::string& data) override { writer.send(data); }
     };
+
+    std::string get_address(const std::string& scheme, int port = 0)
+    {
+        return scheme + "://127.0.0.1:" + std::to_string(port);
+    }
 }  // namespace
 
-TEST(siesta, websocket_echo)
+TEST(websocket, echo)
 {
     std::shared_ptr<server::Server> server;
-    EXPECT_NO_THROW(server =
-                        server::createServer("http://127.0.0.1:8080", true));
+
+    EXPECT_NO_THROW(server = server::createServer(get_address("http"), false));
     EXPECT_NO_THROW(server->start());
+    const int port = server->port();
 
     server::TokenHolder holder;
     EXPECT_NO_THROW(holder += server->addTextWebsocket(
@@ -33,32 +68,27 @@ TEST(siesta, websocket_echo)
     const std::string req_body("{33F949DE-ED30-450C-B903-670EFF210D08}");
     std::unique_ptr<client::websocket::Writer> client;
 
-    std::mutex m;
-    std::condition_variable cv;
-    std::string result;
+    std::promise<std::string> result;
+    auto f = result.get_future();
+
     auto fn_read_callback = [&](client::websocket::Writer&,
                                 const std::string& data) {
-        std::lock_guard<std::mutex> lock(m);
-        result = data;
-        cv.notify_one();
+        result.set_value(data);
     };
 
-    EXPECT_NO_THROW(client = client::websocket::connect(
-                        "ws://127.0.0.1:8080/socket", fn_read_callback));
+    ASSERT_NO_THROW(client = client::websocket::connect(
+                        get_address("ws", port) + "/socket", fn_read_callback));
     EXPECT_NO_THROW(client->send(req_body));
 
-    std::unique_lock<std::mutex> lock(m);
-    EXPECT_TRUE(cv.wait_for(
-        lock, std::chrono::milliseconds(500), [&] { return !result.empty(); }));
-    EXPECT_EQ(result, req_body);
+    EXPECT_EQ(f.get(), req_body);
 }
 
-TEST(siesta, websocket_one_client_only)
+TEST(websocket, one_client_only)
 {
     std::shared_ptr<server::Server> server;
-    EXPECT_NO_THROW(server =
-                        server::createServer("http://127.0.0.1:8080", true));
+    EXPECT_NO_THROW(server = server::createServer(get_address("http"), true));
     EXPECT_NO_THROW(server->start());
+    const int port = server->port();
 
     server::TokenHolder holder;
     EXPECT_NO_THROW(
@@ -74,28 +104,34 @@ TEST(siesta, websocket_one_client_only)
                                 const std::string& data) {};
 
     // First connection ok
-    EXPECT_NO_THROW(client1 = client::websocket::connect(
-                        "ws://127.0.0.1:8080/socket", fn_read_callback));
+    const auto client_addr = get_address("ws", port) + "/socket";
+    EXPECT_NO_THROW(
+        client1 = client::websocket::connect(client_addr, fn_read_callback));
 
     // Second connection shall fail
-    EXPECT_THROW(client2 = client::websocket::connect(
-                     "ws://127.0.0.1:8080/socket", fn_read_callback),
-                 std::runtime_error);
+    EXPECT_THROW(
+        client2 = client::websocket::connect(client_addr, fn_read_callback),
+        std::runtime_error);
 
     // Release first connection
     client1 = nullptr;
 
+    // Allow for server to shut down stream
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
     // Try second connection again
-    EXPECT_NO_THROW(client2 = client::websocket::connect(
-                        "ws://127.0.0.1:8080/socket", fn_read_callback));
+    EXPECT_NO_THROW(
+        client2 = client::websocket::connect(client_addr, fn_read_callback));
+
+    holder.clear();
 }
 
-TEST(siesta, websocket_max_two_clients)
+TEST(websocket, max_two_clients)
 {
     std::shared_ptr<server::Server> server;
-    EXPECT_NO_THROW(server =
-                        server::createServer("http://127.0.0.1:8080", true));
+    EXPECT_NO_THROW(server = server::createServer(get_address("http"), true));
     EXPECT_NO_THROW(server->start());
+    const int port = server->port();
 
     server::TokenHolder holder;
     EXPECT_NO_THROW(
@@ -112,45 +148,51 @@ TEST(siesta, websocket_max_two_clients)
                                 const std::string& data) {};
 
     // First connection ok
-    EXPECT_NO_THROW(client1 = client::websocket::connect(
-                        "ws://127.0.0.1:8080/socket", fn_read_callback));
+    const auto client_addr = get_address("ws", port) + "/socket";
+    EXPECT_NO_THROW(
+        client1 = client::websocket::connect(client_addr, fn_read_callback));
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     // Second connection too
-    EXPECT_NO_THROW(client2 = client::websocket::connect(
-                        "ws://127.0.0.1:8080/socket", fn_read_callback));
+    EXPECT_NO_THROW(
+        client2 = client::websocket::connect(client_addr, fn_read_callback));
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     // Third connection though shall fail
-    EXPECT_THROW(client3 = client::websocket::connect(
-                     "ws://127.0.0.1:8080/socket", fn_read_callback),
-                 std::runtime_error);
+    EXPECT_THROW(
+        client3 = client::websocket::connect(client_addr, fn_read_callback),
+        std::runtime_error);
 
     // Release first connection
     client1 = nullptr;
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     // Try third connection again
-    EXPECT_NO_THROW(client3 = client::websocket::connect(
-                        "ws://127.0.0.1:8080/socket", fn_read_callback));
+    EXPECT_NO_THROW(
+        client3 = client::websocket::connect(client_addr, fn_read_callback));
 }
 
-TEST(siesta, websocket_open_close_client)
+TEST(websocket, open_close_client)
 {
     std::shared_ptr<server::Server> server;
-    EXPECT_NO_THROW(server =
-                        server::createServer("http://127.0.0.1:8080", true));
+    EXPECT_NO_THROW(server = server::createServer(get_address("http"), true));
     EXPECT_NO_THROW(server->start());
+    const int port = server->port();
 
+    std::atomic<bool> server_socket_closed{false};
     server::TokenHolder holder;
     EXPECT_NO_THROW(holder += server->addTextWebsocket(
-                        "/socket", [](server::websocket::Writer& w) {
-                            return new MySocketImpl(w);
+                        "/socket", [&](server::websocket::Writer& w) {
+                            return new MySocketImpl(w, &server_socket_closed);
                         }));
 
     std::unique_ptr<client::websocket::Writer> client;
 
-    bool open_called  = false;
-    bool close_called = false;
+    std::atomic<bool> open_called{false};
+    std::atomic<bool> close_called{false};
 
     auto fn_open_callback = [&](client::websocket::Writer&) {
         open_called = true;
@@ -163,26 +205,32 @@ TEST(siesta, websocket_open_close_client)
         close_called = true;
     };
 
-    EXPECT_NO_THROW(client =
-                        client::websocket::connect("ws://127.0.0.1:8080/socket",
-                                                   fn_read_callback,
-                                                   fn_open_callback,
-                                                   fn_error_callback,
-                                                   fn_close_callback));
+    const auto client_addr = get_address("ws", port) + "/socket";
+    EXPECT_NO_THROW(client = client::websocket::connect(client_addr,
+                                                        fn_read_callback,
+                                                        fn_open_callback,
+                                                        fn_error_callback,
+                                                        fn_close_callback));
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     EXPECT_TRUE(open_called);
 
     // This will close the websocket from the client side
     client = nullptr;
     EXPECT_TRUE(close_called);
+
+    // Allow for server to close the websocket stream
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    EXPECT_TRUE(server_socket_closed);
+
+    holder.clear();
 }
 
-TEST(siesta, websocket_open_close_server)
+TEST(websocket, open_close_server)
 {
     std::shared_ptr<server::Server> server;
-    EXPECT_NO_THROW(server =
-                        server::createServer("http://127.0.0.1:8080", true));
+    EXPECT_NO_THROW(server = server::createServer(get_address("http"), true));
     EXPECT_NO_THROW(server->start());
+    const int port = server->port();
 
     server::TokenHolder holder;
     EXPECT_NO_THROW(holder += server->addTextWebsocket(
@@ -192,8 +240,8 @@ TEST(siesta, websocket_open_close_server)
 
     std::unique_ptr<client::websocket::Writer> client;
 
-    bool open_called  = false;
-    bool close_called = false;
+    std::atomic<bool> open_called{false};
+    std::atomic<bool> close_called{false};
 
     auto fn_open_callback = [&](client::websocket::Writer&) {
         open_called = true;
@@ -206,23 +254,23 @@ TEST(siesta, websocket_open_close_server)
         close_called = true;
     };
 
-    EXPECT_NO_THROW(client =
-                        client::websocket::connect("ws://127.0.0.1:8080/socket",
-                                                   fn_read_callback,
-                                                   fn_open_callback,
-                                                   fn_error_callback,
-                                                   fn_close_callback));
+    const auto client_addr = get_address("ws", port) + "/socket";
+    EXPECT_NO_THROW(client = client::websocket::connect(client_addr,
+                                                        fn_read_callback,
+                                                        fn_open_callback,
+                                                        fn_error_callback,
+                                                        fn_close_callback));
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     EXPECT_TRUE(open_called);
 
     // This will close the websocket from the server side
     holder.clear();
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
     EXPECT_TRUE(close_called);
 }
 
-TEST(siesta, websocket_no_open_close)
+TEST(websocket, no_open_close)
 {
     std::unique_ptr<client::websocket::Writer> client;
 
@@ -240,13 +288,14 @@ TEST(siesta, websocket_no_open_close)
         close_called = true;
     };
 
-    EXPECT_THROW(
-        client = client::websocket::connect("ws://127.0.0.1:8080/socket",
-                                            fn_read_callback,
-                                            fn_open_callback,
-                                            fn_error_callback,
-                                            fn_close_callback),
-        std::runtime_error);
+    const auto client_addr = get_address("ws", 8080) + "/socket";
+
+    EXPECT_THROW(client = client::websocket::connect(client_addr,
+                                                     fn_read_callback,
+                                                     fn_open_callback,
+                                                     fn_error_callback,
+                                                     fn_close_callback),
+                 std::runtime_error);
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     EXPECT_FALSE(open_called);
 
