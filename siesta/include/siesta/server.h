@@ -84,6 +84,13 @@ namespace siesta
             using Factory = std::function<Reader*(Writer&)>;
         }  // namespace websocket
 
+        // Certificate information
+        struct Certificate {
+            std::string cert;
+            std::string key;
+            std::string passwd;
+        };
+
         class Server
         {
         public:
@@ -146,25 +153,6 @@ namespace siesta
                 const size_t max_num_connections = 0) = 0;
 
             /**
-             * Add a certificate. Used when TLS is enabled. Must be called
-             * before server is started
-             *
-             * @param cert      Certificate
-             * @param key       Private key for certificate
-             * @param passwd    Password
-             * @returns void
-             */
-            virtual void addCertificate(const std::string& cert,
-                                        const std::string& key,
-                                        const std::string& passwd = "") = 0;
-            /**
-             * Starts the server
-             *
-             * @returns void
-             */
-            virtual void start() = 0;
-
-            /**
              * Get the port number for the server. Only valid after server has
              * been started.
              *
@@ -174,17 +162,19 @@ namespace siesta
         };
 
         /**
-         * Create a server instance
+         * Create a server instance, and starts it.
          *
          * @param address                   Address, f.i.
          * "http://127.0.0.1/9080"
          * @param callback_on_new_thread    If true, callbacks are done on a new
          * thread, and not on the nng thread (which has limited stack size)
+         * @param certificate               Certificate when using TLS.
          * @returns A server instance
          */
         std::shared_ptr<Server> createServer(
             const std::string& address,
-            const bool callback_on_new_thread = true);
+            const bool callback_on_new_thread = true,
+            const Certificate& certificate    = {});
 
     }  // namespace server
 }  // namespace siesta

@@ -60,7 +60,6 @@ TEST(siesta, serve_root_uri)
 {
     std::shared_ptr<server::Server> server;
     EXPECT_NO_THROW(server = server::createServer(get_address("http")));
-    EXPECT_NO_THROW(server->start());
     const int port = server->port();
 
     server::TokenHolder holder;
@@ -80,7 +79,6 @@ TEST(siesta, serve_non_root_uri)
 {
     std::shared_ptr<server::Server> server;
     EXPECT_NO_THROW(server = server::createServer(get_address("http")));
-    EXPECT_NO_THROW(server->start());
     const int port = server->port();
 
     server::TokenHolder holder;

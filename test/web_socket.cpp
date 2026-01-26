@@ -56,7 +56,6 @@ TEST(websocket, echo)
     std::shared_ptr<server::Server> server;
 
     EXPECT_NO_THROW(server = server::createServer(get_address("http"), false));
-    EXPECT_NO_THROW(server->start());
     const int port = server->port();
 
     server::TokenHolder holder;
@@ -87,7 +86,6 @@ TEST(websocket, one_client_only)
 {
     std::shared_ptr<server::Server> server;
     EXPECT_NO_THROW(server = server::createServer(get_address("http"), true));
-    EXPECT_NO_THROW(server->start());
     const int port = server->port();
 
     server::TokenHolder holder;
@@ -130,7 +128,6 @@ TEST(websocket, max_two_clients)
 {
     std::shared_ptr<server::Server> server;
     EXPECT_NO_THROW(server = server::createServer(get_address("http"), true));
-    EXPECT_NO_THROW(server->start());
     const int port = server->port();
 
     server::TokenHolder holder;
@@ -179,7 +176,6 @@ TEST(websocket, open_close_client)
 {
     std::shared_ptr<server::Server> server;
     EXPECT_NO_THROW(server = server::createServer(get_address("http"), true));
-    EXPECT_NO_THROW(server->start());
     const int port = server->port();
 
     std::atomic<bool> server_socket_closed{false};
@@ -229,7 +225,6 @@ TEST(websocket, open_close_server)
 {
     std::shared_ptr<server::Server> server;
     EXPECT_NO_THROW(server = server::createServer(get_address("http"), true));
-    EXPECT_NO_THROW(server->start());
     const int port = server->port();
 
     server::TokenHolder holder;

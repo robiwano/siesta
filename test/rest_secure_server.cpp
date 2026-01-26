@@ -8,7 +8,6 @@ TEST(siesta, server_create_secure)
 {
     std::shared_ptr<server::Server> server;
     EXPECT_NO_THROW(server = server::createServer("https://127.0.0.1:8080"));
-    EXPECT_NO_THROW(server->start());
 
     server::TokenHolder holder;
     EXPECT_NO_THROW(

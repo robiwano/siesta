@@ -9,12 +9,10 @@ TEST(siesta, multiple_servers_destroy)
     std::shared_ptr<server::Server> server1;
     std::shared_ptr<server::Server> server2;
     EXPECT_NO_THROW(server1 = server::createServer("http://127.0.0.1:0"));
-    EXPECT_NO_THROW(server1->start());
     const int port = server1->port();
 
     EXPECT_NO_THROW(server2 = server::createServer("http://127.0.0.1:" +
                                                    std::to_string(port)));
-    EXPECT_NO_THROW(server2->start());
 
     server2 = nullptr;
     server1 = nullptr;

@@ -120,7 +120,6 @@ int main(int argc, char** argv)
     ctrlc::set_signal_handler();
     try {
         auto file_server = server::createServer("http://127.0.0.1");
-        file_server->start();
         std::cout << "HTTP Server started, listening on port "
                   << file_server->port() << std::endl;
 
@@ -128,7 +127,6 @@ int main(int argc, char** argv)
         h += file_server->addDirectory("/", file.directory());
 
         auto rest_server = server::createServer("http://127.0.0.1:8866");
-        rest_server->start();
         std::cout << "RESET Server started, listening on port "
                   << rest_server->port() << std::endl;
 

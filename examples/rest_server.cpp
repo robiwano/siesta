@@ -19,7 +19,6 @@ int main(int argc, char** argv)
             addr = argv[1];
         }
         auto server = server::createServer(addr);
-        server->start();
         std::cout << "Server started, listening on port " << server->port()
                   << std::endl;
 
@@ -30,9 +29,11 @@ int main(int argc, char** argv)
             HttpMethod::POST,
             "/shutdown",
             [&](const server::rest::Request& req, server::rest::Response& res) {
-                if (req.getHeader("api_key").find("123456") == std::string::npos) { // make your own system
-                    res.setBody("{\"error\":\"Invalid Api Key\"}"); // no json library
-                   return;
+                if (req.getHeader("api_key").find("123456") ==
+                    std::string::npos) {  // make your own system
+                    res.setBody(
+                        "{\"error\":\"Invalid Api Key\"}");  // no json library
+                    return;
                 }
                 rest_shutdown = true;
                 res.setBody("OK");
@@ -66,10 +67,11 @@ int main(int argc, char** argv)
             HttpMethod::GET,
             "/api/get/:name",
             [&](const server::rest::Request& req, server::rest::Response& res) {
-
-                if (req.getHeader("api_key").find("123456") == std::string::npos) { // make your own system
-                    res.setBody("{\"error\":\"Invalid Api Key\"}"); // no json library
-                    return; // i prefer over throwing an exception...
+                if (req.getHeader("api_key").find("123456") ==
+                    std::string::npos) {  // make your own system
+                    res.setBody(
+                        "{\"error\":\"Invalid Api Key\"}");  // no json library
+                    return;  // i prefer over throwing an exception...
                 }
                 auto name = req.getUriParameters().at("name");
                 auto it   = resource.find(name);
