@@ -105,8 +105,7 @@ namespace siesta
         const char* what() const _NOEXCEPT override { return reason_.c_str(); }
     };
 
-    template <class nng_type,
-              class nng_free_function = std::function<void(nng_type*)>>
+    template <class nng_type, class nng_free_function = void (*)(nng_type*)>
     class nng_smart_ptr
     {
         nng_type* obj{nullptr};
@@ -120,7 +119,15 @@ namespace siesta
         }
 
     public:
-        nng_smart_ptr(nng_free_function fn) : fn_free(fn) {}
+        nng_smart_ptr(nng_free_function fn, nng_type* new_obj = nullptr)
+            : fn_free(fn), obj(new_obj)
+        {
+        }
+        nng_smart_ptr(nng_smart_ptr&& other)
+            : fn_free(other.fn_free), obj(other.obj)
+        {
+            other.obj = nullptr;
+        }
         ~nng_smart_ptr() { release(); }
         nng_smart_ptr& operator=(nng_type* new_obj)
         {
