@@ -50,7 +50,6 @@ int main(int argc, char** argv)
         }
         {
             auto server = server::createServer(addr);
-            server->start();
             std::cout << "Server started, listening on port " << server->port()
                       << std::endl;
 

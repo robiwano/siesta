@@ -62,8 +62,8 @@ if (SIESTA_ENABLE_TLS)
         include(FetchContent)
         FetchContent_Declare(
             mbedtls
-            URL      https://tls.mbed.org/download/mbedtls-2.16.3-apache.tgz
-            URL_HASH SHA1=dce8550f8f9465f3aea44cb7d0f9d0ba8140034a
+            URL      https://github.com/Mbed-TLS/mbedtls/archive/refs/tags/v2.16.12.tar.gz
+            URL_HASH SHA256=294871ab1864a65d0b74325e9219d5bcd6e91c34a3c59270c357bb9ae4d5c393
         )
         FetchContent_GetProperties(mbedtls)
         if(NOT mbedtls_POPULATED)

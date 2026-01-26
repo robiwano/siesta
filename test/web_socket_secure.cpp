@@ -18,8 +18,7 @@ namespace
 TEST(siesta, websocket_secure_echo)
 {
     std::shared_ptr<server::Server> server;
-    EXPECT_NO_THROW(server = server::createServer("https://127.0.0.1:8080"));
-    EXPECT_NO_THROW(server->start());
+    EXPECT_NO_THROW(server = server::createServer("https://127.0.0.1:0"));
 
     server::TokenHolder holder;
     EXPECT_NO_THROW(holder += server->addTextWebsocket(
@@ -40,8 +39,11 @@ TEST(siesta, websocket_secure_echo)
         cv.notify_one();
     };
 
+    const int port = server->port();
+
     EXPECT_NO_THROW(client = client::websocket::connect(
-                        "wss://127.0.0.1:8080/socket", fn_read_callback));
+                        "wss://127.0.0.1:" + std::to_string(port) + "/socket",
+                        fn_read_callback));
     EXPECT_NO_THROW(client->send(req_body));
 
     std::unique_lock<std::mutex> lock(m);

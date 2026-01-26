@@ -70,7 +70,6 @@ int main(int argc, char** argv)
     ctrlc::set_signal_handler();
     try {
         auto server = server::createServer("http://127.0.0.1");
-        server->start();
         std::cout << "HTTP Server started, listening on port " << server->port()
                   << std::endl;
 

@@ -16,7 +16,6 @@ TEST(rest_server, server_ok)
 {
     std::shared_ptr<server::Server> server;
     EXPECT_NO_THROW(server = server::createServer(get_address("http")));
-    EXPECT_NO_THROW(server->start());
     const int port = server->port();
 
     server::TokenHolder TokenHolder;
@@ -46,7 +45,6 @@ TEST(rest_server, server_not_found)
 {
     std::shared_ptr<server::Server> server;
     EXPECT_NO_THROW(server = server::createServer(get_address("http")));
-    EXPECT_NO_THROW(server->start());
     const int port = server->port();
 
     server::TokenHolder TokenHolder;
@@ -81,7 +79,6 @@ TEST(rest_server, server_queries)
 {
     std::shared_ptr<server::Server> server;
     EXPECT_NO_THROW(server = server::createServer(get_address("http")));
-    EXPECT_NO_THROW(server->start());
     const int port = server->port();
 
     server::TokenHolder TokenHolder;
@@ -125,7 +122,6 @@ TEST(rest_server, server_uri_parameters)
 {
     std::shared_ptr<server::Server> server;
     EXPECT_NO_THROW(server = server::createServer(get_address("http")));
-    EXPECT_NO_THROW(server->start());
     const int port = server->port();
 
     server::TokenHolder TokenHolder;
@@ -169,7 +165,6 @@ TEST(rest_server, single_file)
 {
     std::shared_ptr<server::Server> server;
     EXPECT_NO_THROW(server = server::createServer(get_address("http")));
-    EXPECT_NO_THROW(server->start());
     const int port = server->port();
 
     constexpr auto text = "foobar";

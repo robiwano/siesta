@@ -545,7 +545,8 @@ zFX5yAtcD5BnoPBo0CE5y/I=
 
     public:
         ServerImpl(const std::string& address,
-                   const bool callback_on_new_thread)
+                   const bool callback_on_new_thread,
+                   const Certificate& certificate)
             : callback_on_new_thread_(callback_on_new_thread)
         {
             int rv;
@@ -569,6 +570,15 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             if ((rv = nng_http_server_hold(&server_, url_)) != 0) {
                 fatal("nng_http_server_hold", rv);
             }
+
+            // Add certificate
+            if (secure && !certificate.cert.empty()) {
+                addCertificate(
+                    certificate.cert, certificate.key, certificate.passwd);
+            }
+
+            // Start server
+            start();
         }
         ~ServerImpl()
         {
@@ -771,9 +781,23 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                 [pThis, id] { pThis->removeWebsocket(id); }));
         }
 
+        int port() const override
+        {
+            if (!started_) {
+                throw std::runtime_error("Server not started");
+            }
+            nng_sockaddr addr;
+            int rv;
+            if ((rv = nng_http_server_get_addr(server_, &addr)) != 0) {
+                fatal("nng_http_server_get_port", rv);
+            }
+            return ntohs(addr.s_in.sa_port);
+        }
+
+    private:
         void addCertificate(const std::string& cert,
                             const std::string& key,
-                            const std::string& pass) override
+                            const std::string& pass)
         {
             if (tls_cfg_ == nullptr) {
                 throw std::logic_error("Server doesn't support TLS");
@@ -791,7 +815,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             }
         }
 
-        void start() override
+        void start()
         {
             int rv;
             if (started_) {
@@ -822,20 +846,6 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             }
         }
 
-        int port() const override
-        {
-            if (!started_) {
-                throw std::runtime_error("Server not started");
-            }
-            nng_sockaddr addr;
-            int rv;
-            if ((rv = nng_http_server_get_addr(server_, &addr)) != 0) {
-                fatal("nng_http_server_get_port", rv);
-            }
-            return ntohs(addr.s_in.sa_port);
-        }
-
-    private:
         static void ws_accept(void* arg)
         {
             nng_stream_listener* l = (nng_stream_listener*)arg;
@@ -998,10 +1008,12 @@ namespace siesta
     {
         std::shared_ptr<siesta::server::Server> createServer(
             const std::string& address,
-            const bool callback_on_new_thread /*= false*/)
+            const bool callback_on_new_thread /*= true*/,
+            const Certificate& certificate /*= {}*/)
         {
-            return std::make_shared<ServerImpl>(address,
-                                                callback_on_new_thread);
+            return std::make_shared<ServerImpl>(
+                address, callback_on_new_thread, certificate);
         }
+
     }  // namespace server
 }  // namespace siesta
