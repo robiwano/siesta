@@ -11,6 +11,41 @@ unset(SIESTA_STANDALONE)
 if (${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR})
     set_property(GLOBAL PROPERTY USE_FOLDERS ON)
     set(SIESTA_STANDALONE ON CACHE BOOL "" FORCE)
+
+    # Using C++14
+    set(CMAKE_CXX_STANDARD 14)
+
+    # Enable sanitizers
+    # For MacOS with Xcode i.e. clang the ASAN, UBSAN, and TSAN can be used
+    if (SIESTA_SANITIZER)
+        unset(SIESTA_SANITIZER_FLAGS)
+        if (SIESTA_SANITIZER STREQUAL "ASAN")
+            # AddressSanitizer
+            set(SIESTA_SANITIZER_FLAGS "-fsanitize=address -fno-omit-frame-pointer")
+        elseif (SIESTA_SANITIZER STREQUAL "UBSAN")
+            # UndefinedBehaviorSanitizer
+            set(SIESTA_SANITIZER_FLAGS "-fsanitize=undefined")
+        elseif (SIESTA_SANITIZER STREQUAL "MSAN")
+            if(APPLE)
+              message(WARNING "MSAN does not work for Mac")
+            endif()
+            if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+                set(SIESTA_SANITIZER_FLAGS "-fsanitize=memory")
+            else()
+                set(SIESTA_SANITIZER_FLAGS "-fsanitize=leak")
+            endif()
+        elseif (SIESTA_SANITIZER STREQUAL "TSAN")
+            # ThreadSanitizer
+            set(SIESTA_SANITIZER_FLAGS "-fsanitize=thread")
+        else()
+            message(FATAL_ERROR "Cannot enable sanitizer: ${SIESTA_SANITIZER}. Allowed values are: ASAN, MSAN, UBSAN and TSAN.")
+        endif()
+        if (SIESTA_SANITIZER_FLAGS)
+            message(STATUS "Enabling ${SIESTA_SANITIZER} sanitizer support")
+            set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SIESTA_SANITIZER_FLAGS}")
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SIESTA_SANITIZER_FLAGS}")
+        endif()
+    endif()
 else()
     set(SIESTA_STANDALONE OFF CACHE BOOL "" FORCE)
 endif()
