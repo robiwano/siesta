@@ -301,12 +301,18 @@ zFX5yAtcD5BnoPBo0CE5y/I=
         }
     };
 
+    static void http_server_stop_and_release(nng_http_server* server)
+    {
+        nng_http_server_stop(server);
+        nng_http_server_release(server);
+    }
+
     class ServerImpl : public Server,
                        public std::enable_shared_from_this<ServerImpl>
     {
         std::recursive_mutex handler_mutex_;
-        nng_smart_ptr<nng_http_server> server_{nng_http_server_release};
         nng_smart_ptr<nng_tls_config> tls_cfg_{nng_tls_config_free};
+        nng_smart_ptr<nng_http_server> server_{http_server_stop_and_release};
         bool started_{false};
         const bool callback_on_new_thread_{false};
 
@@ -508,7 +514,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                     fatal("nng_tls_config_alloc", rv);
                 }
             }
-            // Get a suitable HTTP(S) server instance.  This creates one
+            // Get a suitable HTTP(S) server instance. This creates one
             // if it doesn't already exist.
             if ((rv = nng_http_server_hold(&server_, url_)) != 0) {
                 fatal("nng_http_server_hold", rv);
@@ -520,14 +526,6 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             assert(routes_.empty());
             assert(directories_.empty());
             assert(websockets_.empty());
-
-            if (server_ != nullptr) {
-                nng_http_server_stop(server_);
-                nng_http_server_release(server_);
-            }
-            if (tls_cfg_ != nullptr) {
-                nng_tls_config_free(tls_cfg_);
-            }
         }
 
         void removeRoute(const char* method, const char* base_uri, int id)
@@ -567,6 +565,9 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                                         rest::Handler handler) override
         {
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
+            if (!started_) {
+                throw std::logic_error("server has to be started");
+            }
             auto method_str  = method_to_string(method);
             auto& method_map = routes_[method_str];
             auto base_uri    = uri;
@@ -657,6 +658,9 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                                             const std::string& path) override
         {
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
+            if (!started_) {
+                throw std::logic_error("server has to be started");
+            }
             auto dir =
                 std::unique_ptr<directory>(new directory(server_, uri, path));
             auto id =
@@ -673,6 +677,9 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             const size_t max_num_connections /*= 0 */) override
         {
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
+            if (!started_) {
+                throw std::logic_error("server has to be started");
+            }
             auto socket = std::unique_ptr<web_socket>(
                 new web_socket(url_,
                                uri,
@@ -695,6 +702,9 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             const size_t max_num_connections /*= 0 */) override
         {
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
+            if (!started_) {
+                throw std::logic_error("server has to be started");
+            }
             auto socket = std::unique_ptr<web_socket>(
                 new web_socket(url_,
                                uri,
@@ -748,6 +758,18 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                 fatal("nng_http_server_start", rv);
             }
             started_ = true;
+            // For "ephemeral" ports, the nng_url needs to be reparsed with the
+            // actual port that has been allocated.
+            if (strcmp(url_->u_port, "0") == 0) {
+                std::stringstream ss;
+                ss << url_->u_scheme << "://" << url_->u_hostname << ":"
+                   << port();
+                url_ = nullptr;
+                int rv;
+                if ((rv = nng_url_parse(&url_, ss.str().c_str())) != 0) {
+                    fatal("nng_url_parse", rv);
+                }
+            }
         }
 
         int port() const override
