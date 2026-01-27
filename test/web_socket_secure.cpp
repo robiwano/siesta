@@ -23,7 +23,7 @@ TEST(siesta, websocket_secure_echo)
     server::TokenHolder holder;
     EXPECT_NO_THROW(holder += server->addTextWebsocket(
                         "/socket", [](server::websocket::Writer& w) {
-                            return new MySocketImpl(w);
+                            return std::make_unique<MySocketImpl>(w);
                         }));
 
     const std::string req_body("{33F949DE-ED30-450C-B903-670EFF210D08}");

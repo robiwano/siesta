@@ -33,10 +33,11 @@ struct WebsocketConnection : server::websocket::Reader {
     }
 
     // The websocket factory method
-    static server::websocket::Reader* create(WebsocketData& owner,
-                                             server::websocket::Writer& w)
+    static std::unique_ptr<server::websocket::Reader> create(
+        WebsocketData& owner,
+        server::websocket::Writer& w)
     {
-        return new WebsocketConnection(owner, w);
+        return std::make_unique<WebsocketConnection>(owner, w);
     }
 };
 

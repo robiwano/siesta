@@ -76,9 +76,10 @@ connect_ws();
         }
 
         // The websocket factory method
-        static server::websocket::Reader* create(server::websocket::Writer& w)
+        static std::unique_ptr<server::websocket::Reader> create(
+            server::websocket::Writer& w)
         {
-            return new WebsocketConnection(w);
+            return std::make_unique<WebsocketConnection>(w);
         }
     };
 
