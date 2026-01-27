@@ -5,9 +5,11 @@
 
 #include <nng/nng.h>
 
+#include <chrono>
 #include <thread>
 
 using namespace siesta;
+using namespace std::chrono_literals;
 
 namespace
 {
@@ -30,16 +32,16 @@ namespace
     // and destroyed when disconnected.
     struct MySocketImpl : server::websocket::Reader {
         server::websocket::Writer& writer;
-        std::atomic<bool>* destructor_called_;
+        std::function<void()> destructor_fn;
         MySocketImpl(server::websocket::Writer& w,
-                     std::atomic<bool>* destructor_called = nullptr)
-            : writer(w), destructor_called_(destructor_called)
+                     std::function<void()> fn = nullptr)
+            : writer(w), destructor_fn(fn)
         {
         }
         ~MySocketImpl()
         {
-            if (destructor_called_) {
-                *destructor_called_ = true;
+            if (destructor_fn) {
+                destructor_fn();
             }
         }
         void onMessage(const std::string& data) override { writer.send(data); }
@@ -58,11 +60,14 @@ TEST(websocket, echo)
     EXPECT_NO_THROW(server = server::createServer(get_address("http"), false));
     const int port = server->port();
 
+    std::promise<void> destructor_called;
     server::TokenHolder holder;
-    EXPECT_NO_THROW(holder += server->addTextWebsocket(
-                        "/socket", [](server::websocket::Writer& w) {
-                            return new MySocketImpl(w);
-                        }));
+    EXPECT_NO_THROW(
+        holder += server->addTextWebsocket(
+            "/socket", [&destructor_called](server::websocket::Writer& w) {
+                return std::make_unique<MySocketImpl>(
+                    w, [&destructor_called] { destructor_called.set_value(); });
+            }));
 
     const std::string req_body("{33F949DE-ED30-450C-B903-670EFF210D08}");
     std::unique_ptr<client::websocket::Writer> client;
@@ -89,11 +94,12 @@ TEST(websocket, one_client_only)
     const int port = server->port();
 
     server::TokenHolder holder;
-    EXPECT_NO_THROW(
-        holder += server->addTextWebsocket(
-            "/socket",
-            [](server::websocket::Writer& w) { return new MySocketImpl(w); },
-            1 /* Limit to one connection */));
+    EXPECT_NO_THROW(holder += server->addTextWebsocket(
+                        "/socket",
+                        [](server::websocket::Writer& w) {
+                            return std::make_unique<MySocketImpl>(w);
+                        },
+                        1 /* Limit to one connection */));
 
     std::unique_ptr<client::websocket::Writer> client1;
     std::unique_ptr<client::websocket::Writer> client2;
@@ -115,7 +121,7 @@ TEST(websocket, one_client_only)
     client1 = nullptr;
 
     // Allow for server to shut down stream
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    std::this_thread::sleep_for(500ms);
 
     // Try second connection again
     EXPECT_NO_THROW(
@@ -131,11 +137,12 @@ TEST(websocket, max_two_clients)
     const int port = server->port();
 
     server::TokenHolder holder;
-    EXPECT_NO_THROW(
-        holder += server->addTextWebsocket(
-            "/socket",
-            [](server::websocket::Writer& w) { return new MySocketImpl(w); },
-            2 /* Limit to two connections */));
+    EXPECT_NO_THROW(holder += server->addTextWebsocket(
+                        "/socket",
+                        [](server::websocket::Writer& w) {
+                            return std::make_unique<MySocketImpl>(w);
+                        },
+                        2 /* Limit to two connections */));
 
     std::unique_ptr<client::websocket::Writer> client1;
     std::unique_ptr<client::websocket::Writer> client2;
@@ -149,13 +156,13 @@ TEST(websocket, max_two_clients)
     EXPECT_NO_THROW(
         client1 = client::websocket::connect(client_addr, fn_read_callback));
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(100ms);
 
     // Second connection too
     EXPECT_NO_THROW(
         client2 = client::websocket::connect(client_addr, fn_read_callback));
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(100ms);
 
     // Third connection though shall fail
     EXPECT_THROW(
@@ -165,7 +172,7 @@ TEST(websocket, max_two_clients)
     // Release first connection
     client1 = nullptr;
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(100ms);
 
     // Try third connection again
     EXPECT_NO_THROW(
@@ -178,27 +185,31 @@ TEST(websocket, open_close_client)
     EXPECT_NO_THROW(server = server::createServer(get_address("http"), true));
     const int port = server->port();
 
-    std::atomic<bool> server_socket_closed{false};
     server::TokenHolder holder;
-    EXPECT_NO_THROW(holder += server->addTextWebsocket(
-                        "/socket", [&](server::websocket::Writer& w) {
-                            return new MySocketImpl(w, &server_socket_closed);
-                        }));
+    std::promise<void> server_socket_closed;
+    EXPECT_NO_THROW(
+        holder += server->addTextWebsocket(
+            "/socket", [&server_socket_closed](server::websocket::Writer& w) {
+                return std::make_unique<MySocketImpl>(
+                    w, [&server_socket_closed] {
+                        server_socket_closed.set_value();
+                    });
+            }));
 
     std::unique_ptr<client::websocket::Writer> client;
 
-    std::atomic<bool> open_called{false};
-    std::atomic<bool> close_called{false};
+    std::promise<void> open_called;
+    std::promise<void> close_called;
 
     auto fn_open_callback = [&](client::websocket::Writer&) {
-        open_called = true;
+        open_called.set_value();
     };
     auto fn_read_callback  = [&](client::websocket::Writer&,
                                 const std::string& data) {};
     auto fn_error_callback = [&](client::websocket::Writer&,
                                  const std::string& error) {};
     auto fn_close_callback = [&](client::websocket::Writer&) {
-        close_called = true;
+        close_called.set_value();
     };
 
     const auto client_addr = get_address("ws", port) + "/socket";
@@ -207,16 +218,17 @@ TEST(websocket, open_close_client)
                                                         fn_open_callback,
                                                         fn_error_callback,
                                                         fn_close_callback));
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    EXPECT_TRUE(open_called);
+    EXPECT_NE(open_called.get_future().wait_for(100ms),
+              std::future_status::timeout);
 
     // This will close the websocket from the client side
     client = nullptr;
-    EXPECT_TRUE(close_called);
+    EXPECT_NE(close_called.get_future().wait_for(100ms),
+              std::future_status::timeout);
 
     // Allow for server to close the websocket stream
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    EXPECT_TRUE(server_socket_closed);
+    EXPECT_NE(server_socket_closed.get_future().wait_for(100ms),
+              std::future_status::timeout);
 
     holder.clear();
 }
@@ -230,23 +242,23 @@ TEST(websocket, open_close_server)
     server::TokenHolder holder;
     EXPECT_NO_THROW(holder += server->addTextWebsocket(
                         "/socket", [](server::websocket::Writer& w) {
-                            return new MySocketImpl(w);
+                            return std::make_unique<MySocketImpl>(w);
                         }));
 
     std::unique_ptr<client::websocket::Writer> client;
 
-    std::atomic<bool> open_called{false};
-    std::atomic<bool> close_called{false};
+    std::promise<void> open_called;
+    std::promise<void> close_called;
 
     auto fn_open_callback = [&](client::websocket::Writer&) {
-        open_called = true;
+        open_called.set_value();
     };
     auto fn_read_callback  = [&](client::websocket::Writer&,
                                 const std::string& data) {};
     auto fn_error_callback = [&](client::websocket::Writer&,
                                  const std::string& error) {};
     auto fn_close_callback = [&](client::websocket::Writer&) {
-        close_called = true;
+        close_called.set_value();
     };
 
     const auto client_addr = get_address("ws", port) + "/socket";
@@ -255,32 +267,32 @@ TEST(websocket, open_close_server)
                                                         fn_open_callback,
                                                         fn_error_callback,
                                                         fn_close_callback));
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    EXPECT_TRUE(open_called);
+    EXPECT_NE(open_called.get_future().wait_for(100ms),
+              std::future_status::timeout);
 
     // This will close the websocket from the server side
     holder.clear();
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    EXPECT_TRUE(close_called);
+    EXPECT_NE(close_called.get_future().wait_for(500ms),
+              std::future_status::timeout);
 }
 
 TEST(websocket, no_open_close)
 {
     std::unique_ptr<client::websocket::Writer> client;
 
-    bool open_called  = false;
-    bool close_called = false;
+    std::promise<void> open_called;
+    std::promise<void> close_called;
 
     auto fn_open_callback = [&](client::websocket::Writer&) {
-        open_called = true;
+        open_called.set_value();
     };
     auto fn_read_callback  = [&](client::websocket::Writer&,
                                 const std::string& data) {};
     auto fn_error_callback = [&](client::websocket::Writer&,
                                  const std::string& error) {};
     auto fn_close_callback = [&](client::websocket::Writer&) {
-        close_called = true;
+        close_called.set_value();
     };
 
     const auto client_addr = get_address("ws", 8080) + "/socket";
@@ -291,9 +303,8 @@ TEST(websocket, no_open_close)
                                                      fn_error_callback,
                                                      fn_close_callback),
                  std::runtime_error);
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    EXPECT_FALSE(open_called);
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    EXPECT_FALSE(close_called);
+    EXPECT_EQ(open_called.get_future().wait_for(100ms),
+              std::future_status::timeout);
+    EXPECT_EQ(close_called.get_future().wait_for(100ms),
+              std::future_status::timeout);
 }

@@ -106,7 +106,7 @@ lAk2Ntrke1HbpUXT4Y5rDmMpW/DYzh+wuaJutHqWWz79QVyHKETLnCJZ1rMoQ2Sv
 zFX5yAtcD5BnoPBo0CE5y/I=
 -----END PRIVATE KEY-----)";
 
-    static void fatal(const char* what, int rv)
+    void fatal(const char* what, int rv)
     {
         std::stringstream ss;
         ss << what << ": " << nng_strerror(rv);
@@ -282,7 +282,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             if ((rv = nng_aio_alloc(&aio_write_, nullptr, nullptr)) != 0) {
                 fatal("nng_aio_alloc write", rv);
             }
-            client_.reset(factory(*this));
+            client_ = factory(*this);
             startReceive();
         }
         ~StreamInternalImpl()
@@ -352,10 +352,16 @@ zFX5yAtcD5BnoPBo0CE5y/I=
         }
     };
 
-    static void http_server_stop_and_release(nng_http_server* server)
+    void http_server_stop_and_release(nng_http_server* server)
     {
         nng_http_server_stop(server);
         nng_http_server_release(server);
+    }
+
+    void stream_listener_close_and_free(nng_stream_listener* listener)
+    {
+        nng_stream_listener_close(listener);
+        nng_stream_listener_free(listener);
     }
 
     class ServerImpl : public Server,
@@ -364,7 +370,6 @@ zFX5yAtcD5BnoPBo0CE5y/I=
         std::recursive_mutex handler_mutex_;
         nng_smart_ptr<nng_tls_config> tls_cfg_{nng_tls_config_free};
         nng_smart_ptr<nng_http_server> server_{http_server_stop_and_release};
-        bool started_{false};
         const bool callback_on_new_thread_{false};
 
         struct route {
@@ -397,13 +402,6 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             std::map<std::string, std::string> additional_headers;
         };
 
-        static void stream_listener_close_and_free(
-            nng_stream_listener* listener)
-        {
-            nng_stream_listener_close(listener);
-            nng_stream_listener_free(listener);
-        }
-
         struct web_socket {
             nng_smart_ptr<nng_stream_listener> listener{
                 stream_listener_close_and_free};
@@ -412,7 +410,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             std::map<int, std::unique_ptr<StreamInternalImpl>> streams;
 
             std::mutex mtx;
-            JobQueue dispose_que;
+            JobQueue dispose_queue;
 
             const nng_url* base_url_;
             std::string path_;
@@ -518,7 +516,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                         factory,
                         stream,
                         [this, id](bool shutdown) {
-                            dispose_que.enqueue([this, id, shutdown] {
+                            dispose_queue.enqueue([this, id, shutdown] {
                                 if (remove_stream_id(id) && !shutdown) {
                                     startListening();
                                 }
@@ -625,9 +623,6 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                                         rest::Handler handler) override
         {
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
-            if (!started_) {
-                throw std::logic_error("server has to be started");
-            }
             auto method_str  = method_to_string(method);
             auto& method_map = routes_[method_str];
             auto base_uri    = uri;
@@ -718,9 +713,6 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                                             const std::string& path) override
         {
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
-            if (!started_) {
-                throw std::logic_error("server has to be started");
-            }
             auto dir =
                 std::unique_ptr<directory>(new directory(server_, uri, path));
             auto id =
@@ -737,9 +729,6 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             const size_t max_num_connections /*= 0 */) override
         {
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
-            if (!started_) {
-                throw std::logic_error("server has to be started");
-            }
             auto socket = std::unique_ptr<web_socket>(
                 new web_socket(url_,
                                uri,
@@ -762,9 +751,6 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             const size_t max_num_connections /*= 0 */) override
         {
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
-            if (!started_) {
-                throw std::logic_error("server has to be started");
-            }
             auto socket = std::unique_ptr<web_socket>(
                 new web_socket(url_,
                                uri,
@@ -783,9 +769,6 @@ zFX5yAtcD5BnoPBo0CE5y/I=
 
         int port() const override
         {
-            if (!started_) {
-                throw std::runtime_error("Server not started");
-            }
             nng_sockaddr addr;
             int rv;
             if ((rv = nng_http_server_get_addr(server_, &addr)) != 0) {
@@ -802,9 +785,6 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             if (tls_cfg_ == nullptr) {
                 throw std::logic_error("Server doesn't support TLS");
             }
-            if (started_) {
-                throw std::runtime_error("Server already started");
-            }
             int rv;
             if ((rv = nng_tls_config_own_cert(
                      tls_cfg_,
@@ -818,9 +798,6 @@ zFX5yAtcD5BnoPBo0CE5y/I=
         void start()
         {
             int rv;
-            if (started_) {
-                return;
-            }
             if (tls_cfg_ != nullptr) {
                 // Always add our own self-signed cert for CN=127.0.0.1
                 addCertificate(tls_cert, tls_key, "");
@@ -831,7 +808,6 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             if ((rv = nng_http_server_start(server_)) != 0) {
                 fatal("nng_http_server_start", rv);
             }
-            started_ = true;
             // For "ephemeral" ports, the nng_url needs to be reparsed with the
             // actual port that has been allocated.
             if (strcmp(url_->u_port, "0") == 0) {
