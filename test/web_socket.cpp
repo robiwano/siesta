@@ -31,9 +31,9 @@ namespace
     // This object will be created when a client connects to the websocket
     // and destroyed when disconnected.
     struct MySocketImpl : server::websocket::Reader {
-        server::websocket::Writer& writer;
+        std::shared_ptr<server::websocket::Writer> writer;
         std::function<void()> destructor_fn;
-        MySocketImpl(server::websocket::Writer& w,
+        MySocketImpl(std::shared_ptr<server::websocket::Writer> w,
                      std::function<void()> fn = nullptr)
             : writer(w), destructor_fn(fn)
         {
@@ -44,7 +44,7 @@ namespace
                 destructor_fn();
             }
         }
-        void onMessage(const std::string& data) override { writer.send(data); }
+        void onMessage(const std::string& data) override { writer->send(data); }
     };
 
     std::string get_address(const std::string& scheme, int port = 0)
@@ -64,7 +64,8 @@ TEST(websocket, echo)
     server::TokenHolder holder;
     EXPECT_NO_THROW(
         holder += server->addTextWebsocket(
-            "/socket", [&destructor_called](server::websocket::Writer& w) {
+            "/socket",
+            [&destructor_called](std::shared_ptr<server::websocket::Writer> w) {
                 return std::make_unique<MySocketImpl>(
                     w, [&destructor_called] { destructor_called.set_value(); });
             }));
@@ -84,6 +85,8 @@ TEST(websocket, echo)
                         get_address("ws", port) + "/socket", fn_read_callback));
     EXPECT_NO_THROW(client->send(req_body));
 
+    ASSERT_NE(f.wait_for(100ms), std::future_status::timeout);
+
     EXPECT_EQ(f.get(), req_body);
 }
 
@@ -96,7 +99,7 @@ TEST(websocket, one_client_only)
     server::TokenHolder holder;
     EXPECT_NO_THROW(holder += server->addTextWebsocket(
                         "/socket",
-                        [](server::websocket::Writer& w) {
+                        [](std::shared_ptr<server::websocket::Writer> w) {
                             return std::make_unique<MySocketImpl>(w);
                         },
                         1 /* Limit to one connection */));
@@ -139,7 +142,7 @@ TEST(websocket, max_two_clients)
     server::TokenHolder holder;
     EXPECT_NO_THROW(holder += server->addTextWebsocket(
                         "/socket",
-                        [](server::websocket::Writer& w) {
+                        [](std::shared_ptr<server::websocket::Writer> w) {
                             return std::make_unique<MySocketImpl>(w);
                         },
                         2 /* Limit to two connections */));
@@ -185,16 +188,17 @@ TEST(websocket, open_close_client)
     EXPECT_NO_THROW(server = server::createServer(get_address("http"), true));
     const int port = server->port();
 
-    server::TokenHolder holder;
     std::promise<void> server_socket_closed;
-    EXPECT_NO_THROW(
-        holder += server->addTextWebsocket(
-            "/socket", [&server_socket_closed](server::websocket::Writer& w) {
-                return std::make_unique<MySocketImpl>(
-                    w, [&server_socket_closed] {
-                        server_socket_closed.set_value();
-                    });
-            }));
+    server::TokenHolder holder;
+    EXPECT_NO_THROW(holder += server->addTextWebsocket(
+                        "/socket",
+                        [&server_socket_closed](
+                            std::shared_ptr<server::websocket::Writer> w) {
+                            return std::make_unique<MySocketImpl>(
+                                w, [&server_socket_closed] {
+                                    server_socket_closed.set_value();
+                                });
+                        }));
 
     std::unique_ptr<client::websocket::Writer> client;
 
@@ -208,9 +212,7 @@ TEST(websocket, open_close_client)
                                 const std::string& data) {};
     auto fn_error_callback = [&](client::websocket::Writer&,
                                  const std::string& error) {};
-    auto fn_close_callback = [&](client::websocket::Writer&) {
-        close_called.set_value();
-    };
+    auto fn_close_callback = [&] { close_called.set_value(); };
 
     const auto client_addr = get_address("ws", port) + "/socket";
     EXPECT_NO_THROW(client = client::websocket::connect(client_addr,
@@ -240,10 +242,11 @@ TEST(websocket, open_close_server)
     const int port = server->port();
 
     server::TokenHolder holder;
-    EXPECT_NO_THROW(holder += server->addTextWebsocket(
-                        "/socket", [](server::websocket::Writer& w) {
-                            return std::make_unique<MySocketImpl>(w);
-                        }));
+    EXPECT_NO_THROW(
+        holder += server->addTextWebsocket(
+            "/socket", [](std::shared_ptr<server::websocket::Writer> w) {
+                return std::make_unique<MySocketImpl>(w);
+            }));
 
     std::unique_ptr<client::websocket::Writer> client;
 
@@ -257,9 +260,7 @@ TEST(websocket, open_close_server)
                                 const std::string& data) {};
     auto fn_error_callback = [&](client::websocket::Writer&,
                                  const std::string& error) {};
-    auto fn_close_callback = [&](client::websocket::Writer&) {
-        close_called.set_value();
-    };
+    auto fn_close_callback = [&] { close_called.set_value(); };
 
     const auto client_addr = get_address("ws", port) + "/socket";
     EXPECT_NO_THROW(client = client::websocket::connect(client_addr,
@@ -291,9 +292,7 @@ TEST(websocket, no_open_close)
                                 const std::string& data) {};
     auto fn_error_callback = [&](client::websocket::Writer&,
                                  const std::string& error) {};
-    auto fn_close_callback = [&](client::websocket::Writer&) {
-        close_called.set_value();
-    };
+    auto fn_close_callback = [&] { close_called.set_value(); };
 
     const auto client_addr = get_address("ws", 8080) + "/socket";
 

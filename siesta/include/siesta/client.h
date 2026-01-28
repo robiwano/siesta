@@ -51,8 +51,8 @@ namespace siesta
                 std::function<void(Writer&)> on_open = nullptr,
                 std::function<void(Writer&, const std::string&)> on_error =
                     nullptr,
-                std::function<void(Writer&)> on_close = nullptr,
-                const bool text_mode                  = true);
+                std::function<void(void)> on_close = nullptr,
+                const bool text_mode               = true);
         }  // namespace websocket
-    }      // namespace client
+    }  // namespace client
 }  // namespace siesta
