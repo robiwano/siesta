@@ -81,7 +81,8 @@ namespace siesta
             };
 
             /** Websocket handler factory type */
-            using Factory = std::function<std::unique_ptr<Reader>(Writer&)>;
+            using Factory =
+                std::function<std::unique_ptr<Reader>(std::shared_ptr<Writer>)>;
         }  // namespace websocket
 
         // Certificate information

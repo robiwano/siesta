@@ -57,11 +57,12 @@ connect_ws();
 </html>)~";
 
     struct WebsocketConnection : server::websocket::Reader {
-        server::websocket::Writer& writer;
-        WebsocketConnection(server::websocket::Writer& w) : writer(w)
+        std::shared_ptr<server::websocket::Writer> writer;
+        WebsocketConnection(std::shared_ptr<server::websocket::Writer> w)
+            : writer(w)
         {
             std::cout << "Stream connected (" << this << ")" << std::endl;
-            w.send("Hello Websocket Listener!");
+            writer->send("Hello Websocket Listener!");
         }
         ~WebsocketConnection()
         {
@@ -72,12 +73,12 @@ connect_ws();
             // Just echo back received data
             std::cout << "Echoing back '" << data << "' (" << this << ")"
                       << std::endl;
-            writer.send(data);
+            writer->send(data);
         }
 
         // The websocket factory method
         static std::unique_ptr<server::websocket::Reader> create(
-            server::websocket::Writer& w)
+            std::shared_ptr<server::websocket::Writer> w)
         {
             return std::make_unique<WebsocketConnection>(w);
         }

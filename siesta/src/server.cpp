@@ -132,8 +132,10 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                         std::unique_lock<std::mutex> lock(mutex);
                         cv.wait(lock,
                                 [this] { return !tasks.empty() || stop; });
-                        if (stop && tasks.empty())
+                        if (stop && tasks.empty()) {
                             return;
+                        }
+                        assert(!tasks.empty());
                         task = std::move(tasks.front());
                         tasks.pop();
                     }
@@ -246,22 +248,21 @@ zFX5yAtcD5BnoPBo0CE5y/I=
         ~RouteTokenImpl() { fn_(); }
     };
 
-    struct StreamInternalImpl : websocket::Writer {
+    struct StreamInternalImpl
+        : websocket::Writer,
+          std::enable_shared_from_this<StreamInternalImpl> {
         nng_smart_ptr<nng_aio> aio_read_{nng_aio_free};
         nng_smart_ptr<nng_aio> aio_write_{nng_aio_free};
         std::unique_ptr<websocket::Reader> client_;
         std::vector<uint8_t> rec_buffer;
         const bool callback_on_new_thread_;
 
-        std::mutex send_mutex;
-
         using Disposer = std::function<void(bool)>;
         Disposer disposer_;
 
         nng_smart_ptr<nng_stream> s_{nng_stream_free};
 
-        StreamInternalImpl(websocket::Factory factory,
-                           nng_stream* s,
+        StreamInternalImpl(nng_stream* s,
                            Disposer fn_dispose,
                            bool callback_on_new_thread)
             : rec_buffer(32768)
@@ -282,13 +283,13 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             if ((rv = nng_aio_alloc(&aio_write_, nullptr, nullptr)) != 0) {
                 fatal("nng_aio_alloc write", rv);
             }
-            client_ = factory(*this);
-            startReceive();
         }
-        ~StreamInternalImpl()
+        ~StreamInternalImpl() {}
+
+        void start(websocket::Factory factory)
         {
-            // Wait for any ongoing write operation
-            std::lock_guard<std::mutex> lock(send_mutex);
+            client_ = factory(shared_from_this());
+            startReceive();
         }
 
         void startReceive()
@@ -296,6 +297,13 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             nng_iov iov = {rec_buffer.data(), rec_buffer.size()};
             nng_aio_set_iov(aio_read_, 1, &iov);
             nng_stream_recv(s_, aio_read_);
+        }
+
+        void dispose(bool shutdown)
+        {
+            // Release the client and its hold on this
+            client_ = nullptr;
+            disposer_(shutdown);
         }
 
         void stream_recv_cb()
@@ -317,10 +325,10 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                 }
             } break;
             case NNG_ECLOSED: {
-                disposer_(false);
+                dispose(false);
             } break;
             case NNG_ECANCELED: {
-                disposer_(true);
+                dispose(true);
             } break;
             default:
                 break;
@@ -335,7 +343,6 @@ zFX5yAtcD5BnoPBo0CE5y/I=
 
         void send(const std::string& data) override
         {
-            std::lock_guard<std::mutex> lock(send_mutex);
             nng_iov iov;
             iov.iov_buf = (void*)data.data();
             iov.iov_len = data.size();
@@ -407,7 +414,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                 stream_listener_close_and_free};
             nng_smart_ptr<nng_aio> aio_accept{nng_aio_free};
             websocket::Factory factory;
-            std::map<int, std::unique_ptr<StreamInternalImpl>> streams;
+            std::map<int, std::shared_ptr<StreamInternalImpl>> streams;
 
             std::mutex mtx;
             JobQueue dispose_queue;
@@ -458,6 +465,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
 
             void startListening()
             {
+                assert(listener == nullptr);
                 nng_url url       = *base_url_;
                 const bool secure = (strcmp(base_url_->u_scheme, "https") == 0);
                 url.u_path        = (char*)path_.c_str();
@@ -490,7 +498,8 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             {
                 std::lock_guard<std::mutex> lock(mtx);
                 streams.erase(id);
-                return (streams.size() < max_num_connections_);
+                return (max_num_connections_ != 0 &&
+                        streams.size() < max_num_connections_);
             }
 
             void accept_cb()
@@ -503,17 +512,8 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                 auto stream = (nng_stream*)nng_aio_get_output(aio_accept, 0);
                 try {
                     std::lock_guard<std::mutex> lock(mtx);
-                    if (max_num_connections_ != 0 &&
-                        (streams.size() + 1) >= max_num_connections_) {
-                        // Stop listening
-                        listener = nullptr;
-                    } else {
-                        nng_stream_listener_accept(listener, aio_accept);
-                    }
-
                     auto id = streams.empty() ? 1 : streams.rbegin()->first + 1;
-                    auto impl = std::make_unique<StreamInternalImpl>(
-                        factory,
+                    auto impl = std::make_shared<StreamInternalImpl>(
                         stream,
                         [this, id](bool shutdown) {
                             dispose_queue.enqueue([this, id, shutdown] {
@@ -523,7 +523,14 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                             });
                         },
                         callback_on_new_thread_);
+                    impl->start(factory);
                     streams.insert(std::make_pair(id, std::move(impl)));
+                    if (streams.size() >= max_num_connections_) {
+                        // Stop listening
+                        listener = nullptr;
+                    } else {
+                        nng_stream_listener_accept(listener, aio_accept);
+                    }
                 } catch (std::exception&) {
                 }
             }
@@ -733,7 +740,6 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                 new web_socket(url_,
                                uri,
                                factory,
-                               // handler_mutex_,
                                true,
                                max_num_connections,
                                callback_on_new_thread_));
@@ -755,7 +761,6 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                 new web_socket(url_,
                                uri,
                                factory,
-                               // handler_mutex_,
                                false,
                                max_num_connections,
                                callback_on_new_thread_));

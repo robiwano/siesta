@@ -9,9 +9,11 @@ namespace
     // This object will be created when a client connects to the websocket
     // and destroyed when disconnected.
     struct MySocketImpl : server::websocket::Reader {
-        server::websocket::Writer& writer;
-        MySocketImpl(server::websocket::Writer& w) : writer(w) {}
-        void onMessage(const std::string& data) override { writer.send(data); }
+        std::shared_ptr<server::websocket::Writer> writer;
+        MySocketImpl(std::shared_ptr<server::websocket::Writer> w) : writer(w)
+        {
+        }
+        void onMessage(const std::string& data) override { writer->send(data); }
     };
 }  // namespace
 
@@ -21,10 +23,11 @@ TEST(siesta, websocket_secure_echo)
     EXPECT_NO_THROW(server = server::createServer("https://127.0.0.1:0"));
 
     server::TokenHolder holder;
-    EXPECT_NO_THROW(holder += server->addTextWebsocket(
-                        "/socket", [](server::websocket::Writer& w) {
-                            return std::make_unique<MySocketImpl>(w);
-                        }));
+    EXPECT_NO_THROW(
+        holder += server->addTextWebsocket(
+            "/socket", [](std::shared_ptr<server::websocket::Writer> w) {
+                return std::make_unique<MySocketImpl>(w);
+            }));
 
     const std::string req_body("{33F949DE-ED30-450C-B903-670EFF210D08}");
     std::unique_ptr<client::websocket::Writer> client;

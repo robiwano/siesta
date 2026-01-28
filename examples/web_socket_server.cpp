@@ -14,8 +14,9 @@ struct WebsocketData {
 
 struct WebsocketConnection : server::websocket::Reader {
     WebsocketData& owner;
-    server::websocket::Writer& writer;
-    WebsocketConnection(WebsocketData& owner, server::websocket::Writer& w)
+    std::shared_ptr<server::websocket::Writer> writer;
+    WebsocketConnection(WebsocketData& owner,
+                        std::shared_ptr<server::websocket::Writer> w)
         : owner(owner), writer(w)
     {
         std::cout << "Stream connected (" << this << ")" << std::endl;
@@ -29,13 +30,13 @@ struct WebsocketConnection : server::websocket::Reader {
         // Just echo back received data
         std::cout << "Echoing back '" << data << "' (" << this << ")"
                   << std::endl;
-        writer.send(data);
+        writer->send(data);
     }
 
     // The websocket factory method
     static std::unique_ptr<server::websocket::Reader> create(
         WebsocketData& owner,
-        server::websocket::Writer& w)
+        std::shared_ptr<server::websocket::Writer> w)
     {
         return std::make_unique<WebsocketConnection>(owner, w);
     }

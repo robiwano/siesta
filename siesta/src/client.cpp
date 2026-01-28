@@ -177,12 +177,12 @@ namespace
         std::function<void(Writer&, const std::string&)> on_message;
         std::function<void(Writer&)> on_open;
         std::function<void(Writer&, const std::string&)> on_error;
-        std::function<void(Writer&)> on_close;
+        std::function<void(void)> on_close;
         WriterImpl(const std::string& address,
                    std::function<void(Writer&, const std::string&)> message,
                    std::function<void(Writer&)> open,
                    std::function<void(Writer&, const std::string&)> error,
-                   std::function<void(Writer&)> close,
+                   std::function<void(void)> close,
                    const bool text_mode)
             : on_message(message)
             , on_open(open)
@@ -271,7 +271,7 @@ namespace
             if (rv != 0) {
                 if (rv == NNG_ECLOSED || rv == NNG_ECANCELED) {
                     if (on_close) {
-                        on_close(*this);
+                        on_close();
                     }
                 } else {
                     if (on_error) {
@@ -352,7 +352,7 @@ siesta::client::websocket::connect(
     std::function<void(Writer&, const std::string&)> on_message,
     std::function<void(Writer&)> on_open /*= nullptr*/,
     std::function<void(Writer&, const std::string&)> on_error /*= nullptr*/,
-    std::function<void(Writer&)> on_close /*= nullptr*/,
+    std::function<void(void)> on_close /*= nullptr*/,
     const bool text_mode /*= true*/)
 {
     return std::unique_ptr<siesta::client::websocket::Writer>(new WriterImpl(
