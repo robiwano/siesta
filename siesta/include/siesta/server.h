@@ -128,30 +128,24 @@ namespace siesta
              *
              * @param uri                   Websocket URI
              * @param factory               Factory for websocket handler.
-             * @param max_num_connections   Max # of concurrent sessions for
-             * websocket. Set to zero for no limit (default).
              * @returns A token. Hold on to returned token to keep websocket
              * "alive". When token goes out of scope, websocket is removed.
              */
             NO_DISCARD virtual std::unique_ptr<Token> addTextWebsocket(
                 const std::string& uri,
-                websocket::Factory factory,
-                const size_t max_num_connections = 0) = 0;
+                websocket::Factory factory) = 0;
 
             /**
              * Adds websocket handler for binary mode websocket.
              *
              * @param uri                   Websocket URI
              * @param factory               Factory for websocket handler.
-             * @param max_num_connections   Max # of concurrent sessions for
-             * websocket. Set to zero for no limit (default).
              * @returns A token. Hold on to returned token to keep websocket
              * "alive". When token goes out of scope, websocket is removed.
              */
             NO_DISCARD virtual std::unique_ptr<Token> addBinaryWebsocket(
                 const std::string& uri,
-                websocket::Factory factory,
-                const size_t max_num_connections = 0) = 0;
+                websocket::Factory factory) = 0;
 
             /**
              * Get the port number for the server. Only valid after server has

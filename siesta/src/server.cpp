@@ -257,7 +257,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
         std::vector<uint8_t> rec_buffer;
         const bool callback_on_new_thread_;
 
-        using Disposer = std::function<void(bool)>;
+        using Disposer = std::function<void(void)>;
         Disposer disposer_;
 
         nng_smart_ptr<nng_stream> s_{nng_stream_free};
@@ -299,11 +299,13 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             nng_stream_recv(s_, aio_read_);
         }
 
-        void dispose(bool shutdown)
+        void dispose(bool closed)
         {
-            // Release the client and its hold on this
+            // Release the client and its hold on "this"
             client_ = nullptr;
-            disposer_(shutdown);
+            if (closed) {
+                disposer_();
+            }
         }
 
         void stream_recv_cb()
@@ -325,10 +327,10 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                 }
             } break;
             case NNG_ECLOSED: {
-                dispose(false);
+                dispose(true);
             } break;
             case NNG_ECANCELED: {
-                dispose(true);
+                dispose(false);
             } break;
             default:
                 break;
@@ -422,20 +424,17 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             const nng_url* base_url_;
             std::string path_;
             const bool text_mode_;
-            const size_t max_num_connections_;
             const bool callback_on_new_thread_;
 
             web_socket(const nng_url* base_url,
                        const std::string& path,
                        websocket::Factory f,
                        const bool text_mode,
-                       const size_t max_num_connections,
                        const bool callback_on_new_thread)
                 : base_url_(base_url)
                 , path_(path)
                 , factory(f)
                 , text_mode_(text_mode)
-                , max_num_connections_(max_num_connections)
                 , callback_on_new_thread_(callback_on_new_thread)
             {
                 int rv;
@@ -494,14 +493,6 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                 nng_stream_listener_accept(listener, aio_accept);
             }
 
-            bool remove_stream_id(const int id)
-            {
-                std::lock_guard<std::mutex> lock(mtx);
-                streams.erase(id);
-                return (max_num_connections_ != 0 &&
-                        streams.size() < max_num_connections_);
-            }
-
             void accept_cb()
             {
                 int rv = nng_aio_result(aio_accept);
@@ -511,26 +502,29 @@ zFX5yAtcD5BnoPBo0CE5y/I=
 
                 auto stream = (nng_stream*)nng_aio_get_output(aio_accept, 0);
                 try {
+                    nng_stream_listener_accept(listener, aio_accept);
                     std::lock_guard<std::mutex> lock(mtx);
                     auto id = streams.empty() ? 1 : streams.rbegin()->first + 1;
                     auto impl = std::make_shared<StreamInternalImpl>(
                         stream,
-                        [this, id](bool shutdown) {
-                            dispose_queue.enqueue([this, id, shutdown] {
-                                if (remove_stream_id(id) && !shutdown) {
-                                    startListening();
+                        [this, id] {
+                            std::shared_ptr<StreamInternalImpl> stream;
+                            {
+                                std::lock_guard<std::mutex> lock(mtx);
+                                auto it = streams.find(id);
+                                if (it == streams.end()) {
+                                    return;
                                 }
+                                stream = it->second;
+                            }
+                            // Takes ownership of the stream (and will delete
+                            // it later)
+                            dispose_queue.enqueue([stream] {  //
                             });
                         },
                         callback_on_new_thread_);
                     impl->start(factory);
                     streams.insert(std::make_pair(id, std::move(impl)));
-                    if (streams.size() >= max_num_connections_) {
-                        // Stop listening
-                        listener = nullptr;
-                    } else {
-                        nng_stream_listener_accept(listener, aio_accept);
-                    }
                 } catch (std::exception&) {
                 }
             }
@@ -732,18 +726,12 @@ zFX5yAtcD5BnoPBo0CE5y/I=
 
         std::unique_ptr<Token> addTextWebsocket(
             const std::string& uri,
-            websocket::Factory factory,
-            const size_t max_num_connections /*= 0 */) override
+            websocket::Factory factory) override
         {
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
-            auto socket = std::unique_ptr<web_socket>(
-                new web_socket(url_,
-                               uri,
-                               factory,
-                               true,
-                               max_num_connections,
-                               callback_on_new_thread_));
-            auto pThis = shared_from_this();
+            auto socket = std::unique_ptr<web_socket>(new web_socket(
+                url_, uri, factory, true, callback_on_new_thread_));
+            auto pThis  = shared_from_this();
             const auto id =
                 websockets_.empty() ? 1 : websockets_.rbegin()->first + 1;
             websockets_.emplace(std::make_pair(id, std::move(socket)));
@@ -753,18 +741,12 @@ zFX5yAtcD5BnoPBo0CE5y/I=
 
         std::unique_ptr<Token> addBinaryWebsocket(
             const std::string& uri,
-            websocket::Factory factory,
-            const size_t max_num_connections /*= 0 */) override
+            websocket::Factory factory) override
         {
             std::lock_guard<std::recursive_mutex> lock(handler_mutex_);
-            auto socket = std::unique_ptr<web_socket>(
-                new web_socket(url_,
-                               uri,
-                               factory,
-                               false,
-                               max_num_connections,
-                               callback_on_new_thread_));
-            auto pThis = shared_from_this();
+            auto socket = std::unique_ptr<web_socket>(new web_socket(
+                url_, uri, factory, false, callback_on_new_thread_));
+            auto pThis  = shared_from_this();
             const auto id =
                 websockets_.empty() ? 1 : websockets_.rbegin()->first + 1;
             websockets_.emplace(std::make_pair(id, std::move(socket)));

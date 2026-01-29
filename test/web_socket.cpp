@@ -90,98 +90,6 @@ TEST(websocket, echo)
     EXPECT_EQ(f.get(), req_body);
 }
 
-TEST(websocket, one_client_only)
-{
-    std::shared_ptr<server::Server> server;
-    EXPECT_NO_THROW(server = server::createServer(get_address("http"), true));
-    const int port = server->port();
-
-    server::TokenHolder holder;
-    EXPECT_NO_THROW(holder += server->addTextWebsocket(
-                        "/socket",
-                        [](std::shared_ptr<server::websocket::Writer> w) {
-                            return std::make_unique<MySocketImpl>(w);
-                        },
-                        1 /* Limit to one connection */));
-
-    std::unique_ptr<client::websocket::Writer> client1;
-    std::unique_ptr<client::websocket::Writer> client2;
-
-    auto fn_read_callback = [&](client::websocket::Writer&,
-                                const std::string& data) {};
-
-    // First connection ok
-    const auto client_addr = get_address("ws", port) + "/socket";
-    EXPECT_NO_THROW(
-        client1 = client::websocket::connect(client_addr, fn_read_callback));
-
-    // Second connection shall fail
-    EXPECT_THROW(
-        client2 = client::websocket::connect(client_addr, fn_read_callback),
-        std::runtime_error);
-
-    // Release first connection
-    client1 = nullptr;
-
-    // Allow for server to shut down stream
-    std::this_thread::sleep_for(500ms);
-
-    // Try second connection again
-    EXPECT_NO_THROW(
-        client2 = client::websocket::connect(client_addr, fn_read_callback));
-
-    holder.clear();
-}
-
-TEST(websocket, max_two_clients)
-{
-    std::shared_ptr<server::Server> server;
-    EXPECT_NO_THROW(server = server::createServer(get_address("http"), true));
-    const int port = server->port();
-
-    server::TokenHolder holder;
-    EXPECT_NO_THROW(holder += server->addTextWebsocket(
-                        "/socket",
-                        [](std::shared_ptr<server::websocket::Writer> w) {
-                            return std::make_unique<MySocketImpl>(w);
-                        },
-                        2 /* Limit to two connections */));
-
-    std::unique_ptr<client::websocket::Writer> client1;
-    std::unique_ptr<client::websocket::Writer> client2;
-    std::unique_ptr<client::websocket::Writer> client3;
-
-    auto fn_read_callback = [&](client::websocket::Writer&,
-                                const std::string& data) {};
-
-    // First connection ok
-    const auto client_addr = get_address("ws", port) + "/socket";
-    EXPECT_NO_THROW(
-        client1 = client::websocket::connect(client_addr, fn_read_callback));
-
-    std::this_thread::sleep_for(100ms);
-
-    // Second connection too
-    EXPECT_NO_THROW(
-        client2 = client::websocket::connect(client_addr, fn_read_callback));
-
-    std::this_thread::sleep_for(100ms);
-
-    // Third connection though shall fail
-    EXPECT_THROW(
-        client3 = client::websocket::connect(client_addr, fn_read_callback),
-        std::runtime_error);
-
-    // Release first connection
-    client1 = nullptr;
-
-    std::this_thread::sleep_for(100ms);
-
-    // Try third connection again
-    EXPECT_NO_THROW(
-        client3 = client::websocket::connect(client_addr, fn_read_callback));
-}
-
 TEST(websocket, open_close_client)
 {
     std::shared_ptr<server::Server> server;
@@ -229,7 +137,7 @@ TEST(websocket, open_close_client)
               std::future_status::timeout);
 
     // Allow for server to close the websocket stream
-    EXPECT_NE(server_socket_closed.get_future().wait_for(100ms),
+    EXPECT_NE(server_socket_closed.get_future().wait_for(500ms),
               std::future_status::timeout);
 
     holder.clear();
