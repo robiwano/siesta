@@ -834,7 +834,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                 }
             } catch (siesta::Exception& e) {
                 nng_http_res_set_status(res, static_cast<uint16_t>(e.status()));
-                if (!e.has_reason()) {
+                if (e.has_reason()) {
                     nng_http_res_set_reason(res, e.what());
                 }
             } catch (std::exception& e) {
