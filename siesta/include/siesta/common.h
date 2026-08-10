@@ -110,7 +110,7 @@ namespace siesta
     {
         nng_type* obj{nullptr};
         nng_free_function fn_free;
-        void release()
+        void remove()
         {
             if (obj != nullptr) {
                 fn_free(obj);
@@ -128,16 +128,25 @@ namespace siesta
         {
             other.obj = nullptr;
         }
-        ~nng_smart_ptr() { release(); }
+        ~nng_smart_ptr() { remove(); }
         nng_smart_ptr& operator=(nng_type* new_obj)
         {
-            release();
+            remove();
             obj = new_obj;
             return *this;
         }
         nng_type** operator&() { return &obj; }
         operator nng_type*() const { return obj; }
         nng_type* operator->() { return obj; }
+
+        nng_type* release()
+        {
+            auto ret = obj;
+            obj      = nullptr;
+            return ret;
+        }
     };
+
+    std::string lookup_content_type(const std::string& file_extension);
 
 }  // namespace siesta
