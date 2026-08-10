@@ -8,6 +8,8 @@
 #include <siesta/server.h>
 
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <future>
 #include <iostream>
 #include <memory>
@@ -28,6 +30,7 @@
 using namespace siesta;
 using namespace siesta::server;
 using siesta::nng_smart_ptr;
+namespace fs = std::filesystem;
 
 namespace
 {
@@ -390,18 +393,23 @@ zFX5yAtcD5BnoPBo0CE5y/I=
         struct directory {
             nng_http_server* server_;
             nng_smart_ptr<nng_http_handler> handler{nng_http_handler_free};
+            const fs::path path_;
             directory(nng_http_server* server,
                       const std::string& uri,
                       const std::string& path)
-                : server_(server)
+                : server_(server), path_(fs::absolute(path))
             {
                 int rv;
-                if ((rv = nng_http_handler_alloc_directory(
-                         &handler, uri.c_str(), path.c_str())) != 0) {
+                if ((rv = nng_http_handler_alloc(
+                         &handler, uri.c_str(), handler_fn)) != 0) {
                     fatal("nng_http_handler_alloc", rv);
                 }
                 if ((rv = nng_http_handler_set_tree(handler)) != 0) {
                     fatal("nng_http_handler_set_tree", rv);
+                }
+                if ((rv = nng_http_handler_set_data(handler, this, NULL)) !=
+                    0) {
+                    fatal("nng_http_handler_add_handler", rv);
                 }
                 if ((rv = nng_http_server_add_handler(server_, handler)) != 0) {
                     fatal("nng_http_handler_add_handler", rv);
@@ -409,6 +417,75 @@ zFX5yAtcD5BnoPBo0CE5y/I=
             }
             ~directory() { nng_http_server_del_handler(server_, handler); }
             std::map<std::string, std::string> additional_headers;
+
+            // Using our own file handler due to nng issues with relative URIs
+            static void handler_fn(nng_aio* aio)
+            {
+                nng_http_req* req = (nng_http_req*)nng_aio_get_input(aio, 0);
+                nng_http_handler* h =
+                    (nng_http_handler*)nng_aio_get_input(aio, 1);
+                int rv;
+                nng_smart_ptr<nng_http_res> res{nng_http_res_free};
+                if ((rv = nng_http_res_alloc(&res)) != 0) {
+                    nng_aio_finish(aio, rv);
+                    return;
+                }
+
+                const auto* hf = (directory*)nng_http_handler_get_data(h);
+                auto path      = hf->path_;
+                path.concat(nng_http_req_get_uri(req));
+                path = fs::canonical(path);
+
+                try {
+                    // Make sure base path is part of path
+                    if (path.string().find(hf->path_.string()) != 0) {
+                        throw siesta::Exception(
+                            siesta::HttpStatus::BAD_REQUEST);
+                    }
+
+                    if (fs::is_directory(path)) {
+                        path.concat("index.html");
+                    }
+
+                    if (!fs::is_regular_file(path)) {
+                        throw siesta::Exception(siesta::HttpStatus::NOT_FOUND);
+                    }
+
+                    auto ctype = lookup_content_type(path.extension().string());
+
+                    std::ifstream is(path, std::ios::binary | std::ios::ate);
+                    if (!is.is_open()) {
+                        throw siesta::Exception(
+                            siesta::HttpStatus::INTERNAL_SERVER_ERROR,
+                            "file read error");
+                    }
+                    auto fileSize = is.tellg();
+                    is.seekg(std::ios::beg);
+                    std::string content(fileSize, 0);
+                    is.read(&content[0], fileSize);
+
+                    if (((rv = nng_http_res_set_status(
+                              res, NNG_HTTP_STATUS_OK)) != 0) ||
+                        ((rv = nng_http_res_set_header(
+                              res, "Content-Type", ctype.c_str())) != 0) ||
+                        ((rv = nng_http_res_copy_data(
+                              res, content.data(), content.size())) != 0)) {
+                        nng_aio_finish(aio, rv);
+                        return;
+                    }
+
+                } catch (siesta::Exception& e) {
+                    nng_http_res_set_data(res, NULL, 0);
+                    nng_http_res_set_status(res, (uint16_t)e.status());
+                    if (e.has_reason()) {
+                        nng_http_res_set_reason(res, e.what());
+                    } else {
+                        nng_http_res_set_reason(res, NULL);
+                    }
+                }
+                nng_aio_set_output(aio, 0, res.release());
+                nng_aio_finish(aio, 0);
+            }
         };
 
         struct web_socket {
@@ -965,6 +1042,47 @@ namespace siesta
             }
         }
         throw std::runtime_error("method '" + method + "' not found");
+    }
+
+    std::string lookup_content_type(const std::string& file_extension)
+    {
+        // Copied from nng http_server.c
+        static const std::map<std::string, std::string> ext_2_content = {
+            {".ai", "application/postscript"},
+            {".aif", "audio/aiff"},
+            {".aiff", "audio/aiff"},
+            {".avi", "video/avi"},
+            {".au", "audio/basic"},
+            {".bin", "application/octet-stream"},
+            {".bmp", "image/bmp"},
+            {".css", "text/css"},
+            {".eps", "application/postscript"},
+            {".gif", "image/gif"},
+            {".htm", "text/html"},
+            {".html", "text/html"},
+            {".ico", "image/x-icon"},
+            {".jpeg", "image/jpeg"},
+            {".jpg", "image/jpeg"},
+            {".js", "application/javascript"},
+            {".md", "text/markdown"},
+            {".mp2", "video/mpeg"},
+            {".mp3", "audio/mpeg3"},
+            {".mpeg", "video/mpeg"},
+            {".mpg", "video/mpeg"},
+            {".pdf", "application/pdf"},
+            {".png", "image/png"},
+            {".ps", "application/postscript"},
+            {".rtf", "text/rtf"},
+            {".text", "text/plain"},
+            {".tif", "image/tiff"},
+            {".tiff", "image/tiff"},
+            {".txt", "text/plain"},
+            {".wav", "audio/wav"}};
+        auto it = ext_2_content.find(file_extension);
+        if (it == ext_2_content.end()) {
+            return "text/plain";
+        }
+        return it->second;
     }
 
     namespace server
