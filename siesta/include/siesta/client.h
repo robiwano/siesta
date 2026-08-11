@@ -17,6 +17,10 @@ namespace siesta
         NO_DISCARD Response getRequest(const std::string& address,
                                        const Headers& headers = Headers(),
                                        const int timeout_ms   = 1000);
+        // Uses the raw path without any canonicalization
+        NO_DISCARD Response getRequestRawUri(const std::string& address,
+                                             const Headers& headers = Headers(),
+                                             const int timeout_ms   = 1000);
         NO_DISCARD Response putRequest(const std::string& uri,
                                        const std::string& body,
                                        const std::string& content_type,

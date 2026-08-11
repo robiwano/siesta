@@ -32,11 +32,28 @@ namespace
         const std::string& address,
         const std::string& body,
         const std::string& content_type,
-        const int timeout_ms)
+        const int timeout_ms,
+        const bool raw_uri)
     {
         auto f = std::async(std::launch::async, [=]() -> std::string {
             nng_smart_ptr<nng_url> url(nng_url_free);
             nng_call(nng_url_parse, &url, address.c_str());
+            if (raw_uri) {
+                // Copy the path verbatim (used in tests)
+                std::string raw = url->u_rawurl;
+                auto pos        = raw.find(url->u_hostname);
+                if (pos != std::string::npos) {
+                    pos = raw.find_first_of('/', pos);
+                    if (pos != std::string::npos) {
+                        auto path = raw.substr(pos);
+                        // Replace the old strings in nng_url object
+                        nng_strfree(url->u_path);
+                        nng_strfree(url->u_requri);
+                        url->u_path   = nng_strdup(path.c_str());
+                        url->u_requri = nng_strdup(path.c_str());
+                    }
+                }
+            }
 
             nng_smart_ptr<nng_http_client> client(nng_http_client_free);
             nng_call(nng_http_client_alloc, &client, url);
@@ -306,7 +323,17 @@ Response siesta::client::getRequest(const std::string& address,
                                     const Headers& headers /*= Headers()*/,
                                     const int timeout_ms /*= 1000*/)
 {
-    return doRequest(HttpMethod::GET, headers, address, "", "", timeout_ms);
+    return doRequest(
+        HttpMethod::GET, headers, address, "", "", timeout_ms, false);
+}
+
+NO_DISCARD Response
+siesta::client::getRequestRawUri(const std::string& address,
+                                 const Headers& headers /*= Headers()*/,
+                                 const int timeout_ms /*= 1000*/)
+{
+    return doRequest(
+        HttpMethod::GET, headers, address, "", "", timeout_ms, true);
 }
 
 Response siesta::client::putRequest(const std::string& uri,
@@ -316,7 +343,7 @@ Response siesta::client::putRequest(const std::string& uri,
                                     const int timeout_ms /*= 1000*/)
 {
     return doRequest(
-        HttpMethod::PUT, headers, uri, body, content_type, timeout_ms);
+        HttpMethod::PUT, headers, uri, body, content_type, timeout_ms, false);
 }
 
 Response siesta::client::postRequest(const std::string& uri,
@@ -326,14 +353,14 @@ Response siesta::client::postRequest(const std::string& uri,
                                      const int timeout_ms /*= 1000*/)
 {
     return doRequest(
-        HttpMethod::POST, headers, uri, body, content_type, timeout_ms);
+        HttpMethod::POST, headers, uri, body, content_type, timeout_ms, false);
 }
 
 Response siesta::client::deleteRequest(const std::string& uri,
                                        const Headers& headers /*= Headers()*/,
                                        const int timeout_ms /*= 1000*/)
 {
-    return doRequest(HttpMethod::DEL, headers, uri, "", "", timeout_ms);
+    return doRequest(HttpMethod::DEL, headers, uri, "", "", timeout_ms, false);
 }
 
 Response siesta::client::patchRequest(const std::string& uri,
@@ -343,7 +370,7 @@ Response siesta::client::patchRequest(const std::string& uri,
                                       const int timeout_ms /*= 1000*/)
 {
     return doRequest(
-        HttpMethod::PATCH, headers, uri, body, content_type, timeout_ms);
+        HttpMethod::PATCH, headers, uri, body, content_type, timeout_ms, false);
 }
 
 std::unique_ptr<siesta::client::websocket::Writer>
