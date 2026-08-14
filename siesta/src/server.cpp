@@ -409,7 +409,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                 }
                 if ((rv = nng_http_handler_set_data(handler, this, NULL)) !=
                     0) {
-                    fatal("nng_http_handler_add_handler", rv);
+                    fatal("nng_http_handler_set_data", rv);
                 }
                 if ((rv = nng_http_server_add_handler(server_, handler)) != 0) {
                     fatal("nng_http_handler_add_handler", rv);
@@ -433,10 +433,12 @@ zFX5yAtcD5BnoPBo0CE5y/I=
 
                 const auto* hf = (directory*)nng_http_handler_get_data(h);
                 auto path      = hf->path_;
-                path.concat(nng_http_req_get_uri(req));
-                path = fs::canonical(path);
 
                 try {
+                    path.concat(nng_http_req_get_uri(req));
+                    auto abs_path = fs::absolute(path);
+                    path          = fs::canonical(abs_path);
+
                     // Make sure base path is part of path
                     if (path.string().find(hf->path_.string()) != 0) {
                         throw siesta::Exception(
@@ -444,7 +446,7 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                     }
 
                     if (fs::is_directory(path)) {
-                        path.concat("index.html");
+                        path.append("index.html");
                     }
 
                     if (!fs::is_regular_file(path)) {
@@ -473,7 +475,6 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                         nng_aio_finish(aio, rv);
                         return;
                     }
-
                 } catch (siesta::Exception& e) {
                     nng_http_res_set_data(res, NULL, 0);
                     nng_http_res_set_status(res, (uint16_t)e.status());
@@ -482,6 +483,11 @@ zFX5yAtcD5BnoPBo0CE5y/I=
                     } else {
                         nng_http_res_set_reason(res, NULL);
                     }
+                } catch (std::exception& e) {
+                    nng_http_res_set_data(res, NULL, 0);
+                    nng_http_res_set_status(
+                        res, (uint16_t)siesta::HttpStatus::NOT_FOUND);
+                    nng_http_res_set_reason(res, e.what());
                 }
                 nng_aio_set_output(aio, 0, res.release());
                 nng_aio_finish(aio, 0);
